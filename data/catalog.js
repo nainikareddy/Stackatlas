@@ -1,0 +1,230 @@
+// StackAtlas catalog — output of introspect.py + docgen.py against db/seed.sql.
+// Pre-generated so the demo runs with zero setup. Regenerate with the pipeline.
+
+export const catalog = {
+  database: "vibeshop (Postgres 16)",
+  generatedAt: "2026-07-05T09:14:00Z",
+  healthScore: 61,
+  stats: { tables: 14, columns: 61, fkCoverage: 0.27, docCoverage: 1.0, orphans: 3 },
+  tables: [
+    {
+      name: "users", rows: 4, status: "healthy", pos: { x: 320, y: 90 },
+      readsPerDay: 18400, writesPerDay: 120,
+      doc: "Core identity table. One row per registered account. `plan` drives feature gating in app code (values: free, pro, team — not enforced by constraint). Linked to Stripe via `stripe_customer_id`.",
+      issues: ["No unique index on email — duplicate accounts possible"],
+      columns: [
+        { name: "id", type: "bigint", doc: "Primary key, referenced (often without FKs) across the schema." },
+        { name: "email", type: "text", doc: "Login identifier. NOT unique-indexed.", flag: true },
+        { name: "name", type: "text", doc: "Display name." },
+        { name: "plan", type: "text", doc: "Billing tier: 'free' | 'pro' | 'team'. Enforced in app code only.", flag: true },
+        { name: "stripe_customer_id", type: "text", doc: "Stripe customer ref; null for free users." },
+        { name: "created_at", type: "timestamptz", doc: "Signup time." },
+      ],
+    },
+    {
+      name: "user_prefs", rows: 2, status: "warning", pos: { x: 120, y: 90 },
+      readsPerDay: 2100, writesPerDay: 40,
+      doc: "Per-user settings blob. `prefs` jsonb observed shape: {theme, digest, beta}. No FK to users — rows can outlive their user.",
+      issues: ["Missing FK: user_id → users.id", "Undocumented jsonb shape", "No primary key"],
+      columns: [
+        { name: "user_id", type: "bigint", doc: "Logical FK to users.id (not enforced).", flag: true },
+        { name: "prefs", type: "jsonb", doc: "Observed keys: theme ('dark'|'light'), digest ('daily'|'off'), beta (bool).", flag: true },
+        { name: "updated", type: "timestamptz", doc: "Last write. Named inconsistently vs updated_at elsewhere." },
+      ],
+    },
+    {
+      name: "workspaces", rows: 2, status: "warning", pos: { x: 540, y: 90 },
+      readsPerDay: 9200, writesPerDay: 15,
+      doc: "Team container. camelCase columns (\"ownerId\", \"createdAt\") — created by an AI codegen session, breaks the snake_case convention used everywhere else.",
+      issues: ["Missing FK: ownerId → users.id", "Naming drift: camelCase columns"],
+      columns: [
+        { name: "id", type: "bigint", doc: "Primary key." },
+        { name: "ownerId", type: "bigint", doc: "Logical FK to users.id (not enforced). camelCase.", flag: true },
+        { name: "name", type: "text", doc: "Workspace display name." },
+        { name: "createdAt", type: "timestamptz", doc: "Creation time. camelCase.", flag: true },
+      ],
+    },
+    {
+      name: "orders", rows: 2, status: "critical", pos: { x: 150, y: 250 },
+      readsPerDay: 30, writesPerDay: 0,
+      doc: "LEGACY. Replaced by orders_v2 in Aug 2025 but never dropped. Still referenced by order_items.order_id — the FK was never re-pointed. Do not build new features on this table.",
+      issues: ["Deprecated but still FK-referenced by order_items", "Zero writes in 90 days"],
+      columns: [
+        { name: "id", type: "bigint", doc: "Primary key. Still the FK target of order_items (bug)." , flag: true },
+        { name: "user_id", type: "bigint", doc: "FK to users.id (one of the few real FKs)." },
+        { name: "total", type: "numeric(10,2)", doc: "Order total in dollars (v2 uses cents)." },
+        { name: "status", type: "text", doc: "Full-word statuses ('completed') — different vocabulary than v2." },
+        { name: "created_at", type: "timestamptz", doc: "Creation time." },
+      ],
+    },
+    {
+      name: "orders_v2", rows: 5, status: "warning", pos: { x: 360, y: 250 },
+      readsPerDay: 24600, writesPerDay: 340,
+      doc: "The live orders table — highest-traffic table in the schema. Revenue queries should filter status='c'. Magic single-char statuses: 'p'=pending, 'c'=complete, 'x'=cancelled, 'r'=refunded. FK to users was dropped during a hotfix migration and never restored.",
+      issues: ["Missing FK: user_id → users.id", "Missing FK: workspace_id → workspaces.id", "Magic status values ('p','c','x','r')"],
+      columns: [
+        { name: "id", type: "bigint", doc: "Primary key." },
+        { name: "user_id", type: "bigint", doc: "Logical FK to users.id (dropped in hotfix, not restored).", flag: true },
+        { name: "workspace_id", type: "bigint", doc: "Logical FK to workspaces.id (not enforced).", flag: true },
+        { name: "amount_cents", type: "integer", doc: "Order value in cents (legacy orders used dollars)." },
+        { name: "status", type: "text", doc: "'p'=pending 'c'=complete 'x'=cancelled 'r'=refunded. Enforced nowhere.", flag: true },
+        { name: "meta", type: "jsonb", doc: "Observed keys: src ('web'|'api'), coupon, reason." },
+        { name: "created_at", type: "timestamptz", doc: "Creation time." },
+      ],
+    },
+    {
+      name: "order_items", rows: 0, status: "critical", pos: { x: 580, y: 250 },
+      readsPerDay: 8800, writesPerDay: 0,
+      doc: "Line items. BUG: order_id still has an FK to legacy `orders`, not `orders_v2` — inserts against v2 order ids fail the constraint, which is why the table is empty and app code stuffs line items into orders_v2.meta instead.",
+      issues: ["FK points at deprecated table (orders, should be orders_v2)", "Empty despite 8.8k reads/day — app worked around it"],
+      columns: [
+        { name: "id", type: "bigint", doc: "Primary key." },
+        { name: "order_id", type: "bigint", doc: "FK → orders.id (WRONG TARGET — should be orders_v2).", flag: true },
+        { name: "product_id", type: "bigint", doc: "Logical FK to products.id (not enforced).", flag: true },
+        { name: "qty", type: "integer", doc: "Quantity, default 1." },
+        { name: "unit_price_cents", type: "integer", doc: "Price snapshot at purchase time." },
+      ],
+    },
+    {
+      name: "products", rows: 3, status: "healthy", pos: { x: 800, y: 250 },
+      readsPerDay: 15200, writesPerDay: 2,
+      doc: "Sellable SKUs (currently: subscription plans and seat add-ons). Prices in cents. `active` soft-deletes.",
+      issues: [],
+      columns: [
+        { name: "id", type: "bigint", doc: "Primary key." },
+        { name: "sku", type: "text", doc: "Human-readable SKU (e.g. PLN-PRO)." },
+        { name: "title", type: "text", doc: "Display title." },
+        { name: "price_cents", type: "integer", doc: "Current list price in cents." },
+        { name: "active", type: "boolean", doc: "Soft-delete flag." },
+        { name: "created_at", type: "timestamptz", doc: "Creation time." },
+      ],
+    },
+    {
+      name: "product_catalog_old", rows: 1, status: "critical", pos: { x: 1020, y: 250 },
+      readsPerDay: 0, writesPerDay: 0,
+      doc: "Orphan. Pre-migration product catalog, zero reads since Aug 2025. Uses FLOAT for money. Safe to archive and drop.",
+      issues: ["Orphaned: zero reads in 90 days", "FLOAT used for currency"],
+      columns: [
+        { name: "pid", type: "integer", doc: "Old primary key (no constraint)." },
+        { name: "name", type: "varchar(255)", doc: "Product name." },
+        { name: "price", type: "float", doc: "Price in dollars as float — precision hazard.", flag: true },
+        { name: "cat", type: "varchar(64)", doc: "Category slug." },
+      ],
+    },
+    {
+      name: "payments", rows: 3, status: "warning", pos: { x: 250, y: 410 },
+      readsPerDay: 6400, writesPerDay: 90,
+      doc: "Payment records reconciled from Stripe webhooks. `state` uses Stripe vocabulary ('succeeded','refunded') — a third status vocabulary in this schema. No FK to orders_v2; reconciliation happens in app code.",
+      issues: ["Missing FK: order_id → orders_v2.id", "Third status vocabulary in schema"],
+      columns: [
+        { name: "id", type: "bigint", doc: "Primary key." },
+        { name: "order_id", type: "bigint", doc: "Logical FK to orders_v2.id (not enforced).", flag: true },
+        { name: "stripe_event_id", type: "text", doc: "Joins to stripe_events.id." },
+        { name: "amount_cents", type: "integer", doc: "Captured amount in cents." },
+        { name: "state", type: "text", doc: "Stripe-style: 'succeeded' | 'refunded' | 'failed'.", flag: true },
+        { name: "created_at", type: "timestamptz", doc: "Record creation." },
+      ],
+    },
+    {
+      name: "stripe_events", rows: 3, status: "warning", pos: { x: 470, y: 410 },
+      readsPerDay: 300, writesPerDay: 90,
+      doc: "Raw Stripe webhook payloads, append-only. ~40MB and growing; no retention policy. Source of truth for payments reconciliation.",
+      issues: ["No retention policy — unbounded growth", "Undocumented jsonb payloads"],
+      columns: [
+        { name: "id", type: "text", doc: "Stripe event id (evt_...). Primary key." },
+        { name: "payload", type: "jsonb", doc: "Full webhook body. Observed types: payment_intent.succeeded, charge.refunded.", flag: true },
+        { name: "received_at", type: "timestamptz", doc: "Ingestion time." },
+      ],
+    },
+    {
+      name: "sessions", rows: 0, status: "healthy", pos: { x: 100, y: 410 },
+      readsPerDay: 41000, writesPerDay: 800,
+      doc: "Auth session tokens. Hottest read path in the DB. Expired rows cleaned by a cron the team hopes still runs.",
+      issues: [],
+      columns: [
+        { name: "token", type: "text", doc: "Opaque session token. Primary key." },
+        { name: "user_id", type: "bigint", doc: "FK to users.id (enforced)." },
+        { name: "expires_at", type: "timestamptz", doc: "Expiry; rows past this are dead weight." },
+      ],
+    },
+    {
+      name: "analytics_events", rows: 3, status: "warning", pos: { x: 690, y: 410 },
+      readsPerDay: 1200, writesPerDay: 5200,
+      doc: "Product analytics firehose. `uid` means user_id (naming drift). `ts` is unix epoch seconds while the rest of the schema uses timestamptz — every join needs to_timestamp().",
+      issues: ["Missing FK: uid → users.id", "Naming drift: uid vs user_id", "Epoch integer timestamps vs timestamptz"],
+      columns: [
+        { name: "id", type: "bigint", doc: "Primary key." },
+        { name: "uid", type: "bigint", doc: "user_id under another name. Not enforced.", flag: true },
+        { name: "event", type: "text", doc: "Event name, free-form (page_view, run_report, ...)." },
+        { name: "props", type: "jsonb", doc: "Event properties, shape varies by event." },
+        { name: "ts", type: "bigint", doc: "Unix epoch seconds. Convert with to_timestamp(ts).", flag: true },
+      ],
+    },
+    {
+      name: "feature_flags", rows: 2, status: "healthy", pos: { x: 910, y: 410 },
+      readsPerDay: 52000, writesPerDay: 1,
+      doc: "Runtime feature flags. `rollout` jsonb: {pct, allow:[user_ids]}. Read on nearly every request — most-read table in the schema.",
+      issues: [],
+      columns: [
+        { name: "flag", type: "text", doc: "Flag key. Primary key." },
+        { name: "enabled", type: "boolean", doc: "Master switch." },
+        { name: "rollout", type: "jsonb", doc: "{pct: 0-100, allow: [user ids]} — allow list bypasses pct." },
+      ],
+    },
+    {
+      name: "tmp_backfill_20250811", rows: 0, status: "critical", pos: { x: 1020, y: 90 },
+      readsPerDay: 0, writesPerDay: 0,
+      doc: "Orphan. Scratch table from a one-off backfill script on 2025-08-11. Empty, unreferenced. Safe to drop immediately.",
+      issues: ["Orphaned: junk table from one-off script"],
+      columns: [{ name: "row_data", type: "jsonb", doc: "Backfill scratch payload." }],
+    },
+  ],
+  edges: [
+    { from: "orders", to: "users", enforced: true },
+    { from: "order_items", to: "orders", enforced: true, broken: true, note: "FK targets deprecated table" },
+    { from: "sessions", to: "users", enforced: true },
+    { from: "user_prefs", to: "users", enforced: false },
+    { from: "workspaces", to: "users", enforced: false },
+    { from: "orders_v2", to: "users", enforced: false },
+    { from: "orders_v2", to: "workspaces", enforced: false },
+    { from: "order_items", to: "products", enforced: false },
+    { from: "payments", to: "orders_v2", enforced: false },
+    { from: "payments", to: "stripe_events", enforced: false },
+    { from: "analytics_events", to: "users", enforced: false },
+  ],
+};
+
+// Canned agent answers — identical to what the MCP server returns, so the
+// UI console and a live Claude-over-MCP session tell the same story.
+export const agentAnswers = [
+  {
+    match: ["status", "orders_v2"],
+    q: "What does orders_v2.status mean?",
+    a: "orders_v2.status uses magic single-character values: 'p' = pending, 'c' = complete, 'x' = cancelled, 'r' = refunded. There is no CHECK constraint — values are enforced only in app code. Note: this is one of THREE status vocabularies in this schema (legacy orders uses full words like 'completed'; payments uses Stripe's 'succeeded'/'refunded'). For revenue, filter status = 'c'.",
+  },
+  {
+    match: ["drop", "safe"],
+    q: "Which tables are safe to drop?",
+    a: "Two candidates. (1) tmp_backfill_20250811 — empty scratch table from a one-off script, unreferenced, drop immediately. (2) product_catalog_old — zero reads in 90 days, superseded by products; archive then drop. NOT safe: legacy `orders` — it looks dead (0 writes) but order_items.order_id still holds an enforced FK to it. Re-point that FK to orders_v2 first.",
+  },
+  {
+    match: ["revenue"],
+    q: "Where does revenue come from?",
+    a: "Revenue lives in orders_v2.amount_cents filtered to status='c' (complete), cross-checked against payments.amount_cents where state='succeeded'. Caveats: amounts are in cents (legacy orders used dollar numerics — don't union them naively), refunds appear as status='r' in orders_v2 AND state='refunded' in payments, and the payments↔orders_v2 join is unenforced (no FK), so expect stragglers.",
+  },
+  {
+    match: ["join", "analytics", "users"],
+    q: "How do I join analytics_events to users?",
+    a: "analytics_events.uid is users.id under a drifted name (no FK). Join: analytics_events.uid = users.id. Timestamp caution: analytics_events.ts is unix epoch seconds, so use to_timestamp(ts) before comparing against timestamptz columns like users.created_at.",
+  },
+  {
+    match: ["order_items", "empty"],
+    q: "Why is order_items empty?",
+    a: "order_items.order_id has an enforced FK to the DEPRECATED orders table, not orders_v2. Inserts with v2 order ids violate the constraint, so app code worked around it by stuffing line items into orders_v2.meta. Fix: re-point the FK to orders_v2, backfill from meta, then delete the workaround. This is the highest-priority integrity bug in the schema.",
+  },
+  {
+    match: ["health", "worst", "risk"],
+    q: "What are the biggest risks in this schema?",
+    a: "Health score 61/100. Top risks: (1) order_items FK points at a deprecated table — line-item data is hiding in a jsonb blob; (2) FK coverage is 27% — user_prefs, workspaces, orders_v2, payments, analytics_events all have unenforced joins; (3) three competing status vocabularies invite mis-filtered revenue queries; (4) users.email has no unique index; (5) stripe_events grows unboundedly with no retention policy.",
+  },
+];

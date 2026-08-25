@@ -1,0 +1,75 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://stackatlas.dev/schema/catalog.schema.json",
+  "title": "StackAtlas Catalog",
+  "description": "The canonical contract for a StackAtlas catalog. Emitted by the pipeline (introspect.py + docgen.py) and consumed by the Next.js dashboard and the MCP server. This one schema is the single source of truth every stage validates against.",
+  "type": "object",
+  "required": ["database", "tables", "edges", "stats", "healthScore"],
+  "additionalProperties": true,
+  "properties": {
+    "database": { "type": "string" },
+    "generatedAt": { "type": "string" },
+    "healthScore": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "stats": {
+      "type": "object",
+      "required": ["tables", "columns", "fkCoverage", "docCoverage", "orphans"],
+      "properties": {
+        "tables": { "type": "integer", "minimum": 0 },
+        "columns": { "type": "integer", "minimum": 0 },
+        "fkCoverage": { "type": "number", "minimum": 0, "maximum": 1 },
+        "docCoverage": { "type": "number", "minimum": 0, "maximum": 1 },
+        "orphans": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "tables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "rows", "status", "readsPerDay", "writesPerDay", "columns"],
+        "additionalProperties": true,
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "rows": { "type": "integer", "minimum": 0 },
+          "status": { "enum": ["healthy", "warning", "critical"] },
+          "readsPerDay": { "type": "integer", "minimum": 0 },
+          "writesPerDay": { "type": "integer", "minimum": 0 },
+          "doc": { "type": "string" },
+          "issues": { "type": "array", "items": { "type": "string" } },
+          "pos": {
+            "type": "object",
+            "properties": { "x": { "type": "number" }, "y": { "type": "number" } },
+            "required": ["x", "y"]
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "type"],
+              "properties": {
+                "name": { "type": "string", "minLength": 1 },
+                "type": { "type": "string" },
+                "doc": { "type": "string" },
+                "flag": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from", "to", "enforced"],
+        "properties": {
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "enforced": { "type": "boolean" },
+          "broken": { "type": "boolean" },
+          "via": { "type": "string" },
+          "note": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,5 @@
+# StackAtlas pipeline + MCP server + eval harness
+psycopg2-binary>=2.9      # introspect.py: Postgres introspection
+anthropic>=0.40           # docgen.py: LLM documentation pass
+mcp[cli]>=1.2             # mcp_server/server.py: FastMCP server
+jsonschema>=4.0           # evals/verify.py: catalog schema validation

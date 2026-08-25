@@ -1,0 +1,35 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  evals:
+    name: evals + self-verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install -r requirements-dev.txt
+      - name: Self-verify shipped catalog
+        run: python -m evals.verify mcp_server/catalog.json
+      - name: Score demo catalog (reward gate)
+        run: python -m evals.run_eval --threshold 0.85
+      - name: Run test suite
+        run: python -m pytest -q
+
+  build:
+    name: dashboard build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install
+      - run: npm run build
