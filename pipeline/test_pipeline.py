@@ -77,11 +77,15 @@ def test_stats_window_scales_traffic():
 
 # ---- docgen self-verification helpers (no anthropic import needed) ----------
 def test_compute_health_penalises_findings():
+    # penalty is averaged per table (not summed across the catalog) so the
+    # score doesn't saturate to 0 once a thorough docgen pass finds several
+    # real issues on every table of a larger schema — see compute_health().
     catalog = {"tables": [
         {"status": "healthy", "issues": []},
         {"status": "critical", "issues": ["a", "b"]},
     ]}
-    assert docgen.compute_health(catalog) == 100 - (9 + 2)
+    avg_penalty = (0 + (9 + 2)) / 2
+    assert docgen.compute_health(catalog) == round(100 - avg_penalty * 5)
 
 
 def test_local_violations_flags_undocumented_flag():

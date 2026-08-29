@@ -36,17 +36,23 @@ TAG_SET = set(TAGS)
 
 # Ordered (tag, pattern) rules. A single issue string may match several tags.
 _RULES: list[tuple[str, re.Pattern]] = [
-    ("broken_fk",          re.compile(r"\b(broken fk|points? (at|to) (a )?deprecated|targets? (a )?deprecated|should be orders_v2|re-?point|wrong table)\b", re.I)),
+    ("broken_fk",          re.compile(r"\b(broken fk|points? (at|to) (a )?deprecated|targets? (a )?deprecated|fk (to|targets?) (a )?deprecated|enforced fk (to|targeting) .*deprecated|should be orders_v2|re-?point|wrong table)\b", re.I)),
     ("deprecated_table",   re.compile(r"\b(deprecated|legacy|superseded|replaced by)\b", re.I)),
-    ("empty_but_hot",      re.compile(r"\b(empty (despite|but)|empty .*read|worked around|silent(ly)? (stuff|workaround))\b", re.I)),
+    ("empty_but_hot",      re.compile(r"\b(empty (despite|but)|empty .*read|worked around|silent(ly)? (stuff|workaround))\b|\b(0|zero) rows?\b.{0,80}\bnon-?zero reads?\b", re.I)),
+    # Deliberately narrow: "orphaned" shows up constantly in ROW-level referential
+    # phrasing ("orphaned references", "orphaned orders") that belongs to
+    # missing_fk, not to this tag. Only the bare, un-suffixed word reliably means
+    # "the table itself is abandoned" in practice — broadening it to "orphan\w*"
+    # or trying to regex out row-level phrasing produced far more false positives
+    # than it fixed.
     ("orphan_table",       re.compile(r"\b(orphan|junk|abandoned|zero reads|no reads|left behind)\b", re.I)),
-    ("missing_fk",         re.compile(r"\b(missing fk|no fk|not enforced|unenforced|logical fk|fk (dropped|removed))\b", re.I)),
+    ("missing_fk",         re.compile(r"\b(missing fk|no fk|no enforced foreign keys?|not enforced|unenforced|logical fk|fk (dropped|removed))\b", re.I)),
     ("no_primary_key",     re.compile(r"\bno primary key\b", re.I)),
-    ("no_unique_index",    re.compile(r"\b(no unique index|not unique|duplicate account|duplicate .*possible)\b", re.I)),
+    ("no_unique_index",    re.compile(r"\b(no unique index|no unique constraint|not unique|duplicate accounts?|duplicate .*possible)\b", re.I)),
     ("money_as_float",     re.compile(r"\b(float .*(money|currency|price)|money .*(float|real)|currency .*float|price .*float)\b", re.I)),
     ("status_vocab_drift", re.compile(r"\b(status vocab|another status|third status|different (status )?vocabular|inconsistent status)\b", re.I)),
-    ("magic_values",       re.compile(r"\b(magic (status |value)|single[- ]char|undocumented .*status|status values? \()", re.I)),
-    ("epoch_timestamp",    re.compile(r"\b(epoch|unix (epoch|seconds|time)|integer timestamp|timestamp .*integer)\b", re.I)),
+    ("magic_values",       re.compile(r"\b(magic (status |value|code)|single[- ]char|undocumented .*status|status values? \()", re.I)),
+    ("epoch_timestamp",    re.compile(r"\b(epoch|unix (epoch|seconds|time)|integer timestamp|timestamp .*integer)\b|\b(bigint|integer)\b.{0,30}\btimestamp", re.I)),
     ("naming_drift",       re.compile(r"\b(camelcase|naming drift|uid vs|named (differently|inconsistently)|inconsistent(ly)? (named|naming)|snake_case)\b", re.I)),
     ("undocumented_jsonb", re.compile(r"\b(undocumented jsonb|jsonb shape|jsonb (blob|payload)|shape .*jsonb)\b", re.I)),
     ("unbounded_growth",   re.compile(r"\b(retention|unbounded|grow(ing|s) (unbounded|forever)|no ttl)\b", re.I)),

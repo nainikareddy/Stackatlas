@@ -64,6 +64,16 @@ JOIN information_schema.constraint_column_usage ccu
 WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = 'public';
 """
 
+# Without this, docgen has no way to know a column IS a primary key and will
+# sometimes hallucinate "no primary key" for a table that has one.
+PK_SQL = """
+SELECT tc.table_name, kcu.column_name
+FROM information_schema.table_constraints tc
+JOIN information_schema.key_column_usage kcu
+  ON tc.constraint_name = kcu.constraint_name
+WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = 'public';
+"""
+
 SOFT_FK_ALIASES = {
     "uid": "users", "user_id": "users", "ownerid": "users", "owner_id": "users",
     "workspace_id": "workspaces", "order_id": "orders_v2", "product_id": "products",
@@ -116,15 +126,17 @@ def grid_layout(n, cols=4, x0=120, y0=90, dx=210, dy=150):
     return [{"x": x0 + (i % cols) * dx, "y": y0 + (i // cols) * dy} for i in range(n)]
 
 
-def build_catalog(table_rows, columns, fks, dbname, window_days):
+def build_catalog(table_rows, columns, fks, dbname, window_days, pk_columns=()):
     table_names = {t[0] for t in table_rows}
     fk_pairs = {(f[0], f[2]) for f in fks}
+    pk_set = set(pk_columns)
     positions = grid_layout(len(table_rows))
 
     tables = []
     for idx, (name, approx_rows, read_ops, write_ops) in enumerate(table_rows):
         cols = [
-            {"name": c[1], "type": c[2], "nullable": c[3] == "YES", "default": c[4]}
+            {"name": c[1], "type": c[2], "nullable": c[3] == "YES", "default": c[4],
+             "primaryKey": (name, c[1]) in pk_set}
             for c in columns if c[0] == name
         ]
         tables.append({
@@ -179,11 +191,13 @@ def main():
         cur.execute(TABLES_SQL); table_rows = cur.fetchall()
         cur.execute(COLUMNS_SQL); columns = cur.fetchall()
         cur.execute(FKS_SQL); fks = cur.fetchall()
+        cur.execute(PK_SQL); pk_columns = cur.fetchall()
     finally:
         conn.close()
 
     dbname = args.dsn.rsplit("/", 1)[-1]
-    catalog = build_catalog(table_rows, columns, fks, dbname, args.stats_window_days)
+    catalog = build_catalog(table_rows, columns, fks, dbname, args.stats_window_days,
+                             pk_columns=pk_columns)
     json.dump(catalog, sys.stdout, indent=2, default=str)
 
 

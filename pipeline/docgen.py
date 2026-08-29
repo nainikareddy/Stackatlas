@@ -158,12 +158,23 @@ def document_table(table, edges):
 
 
 def compute_health(catalog):
-    """Naive health score: start at 100, lose points per finding."""
-    penalty = sum(
+    """Naive health score: start at 100, lose points per finding.
+
+    Averaged per table (not summed across the catalog) so the score reflects
+    how messy each table is on average, not how many tables exist. A summed
+    penalty saturates to 0 for any schema past ~10-12 tables once a thorough
+    docgen pass is finding the 2-4 real issues per table that a genuinely
+    messy-but-documented schema like vibeshop has — at that point every
+    catalog scores 0 regardless of quality, which makes the score useless.
+    """
+    tables = catalog["tables"]
+    if not tables:
+        return 100
+    avg_penalty = sum(
         {"healthy": 0, "warning": 4, "critical": 9}[t["status"]] + len(t.get("issues", []))
-        for t in catalog["tables"]
-    )
-    return max(0, 100 - penalty)
+        for t in tables
+    ) / len(tables)
+    return max(0, min(100, round(100 - avg_penalty * 5)))
 
 
 def main(path):
