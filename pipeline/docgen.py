@@ -1,11 +1,14 @@
 """StackAtlas step 2: Claude writes the docs + health findings.
 
 Usage:
-    pip install anthropic
-    export ANTHROPIC_API_KEY=sk-ant-...
     python docgen.py catalog_raw.json > catalog_documented.json
 
 One call per table (schema + traffic + relationships in, docs + issues out).
+Calls run through the `claude` CLI in headless print mode (`claude -p`), which
+authenticates with your existing Claude subscription login — no
+ANTHROPIC_API_KEY or anthropic SDK required, so this reproduces on any
+reviewer's machine that has Claude Code installed and logged in.
+
 Two reliability features make the output trustworthy enough to serve to agents:
 
   * self-verification — every table's output is checked against the same
@@ -15,11 +18,12 @@ Two reliability features make the output trustworthy enough to serve to agents:
   * schema conformance — the finished catalog is validated against
     schema/catalog.schema.json; violations are reported on stderr.
 
-Model is configurable via STACKATLAS_MODEL. For big schemas switch to the
-Message Batches API (50% cheaper) and prompt-cache SYSTEM — both one-liners.
+Model is configurable via STACKATLAS_MODEL (an alias like "sonnet"/"opus", or
+a full model name).
 """
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -28,7 +32,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from evals.verify import verify  # noqa: E402
 from evals.verify import semantic_violations  # noqa: E402
 
-MODEL = os.environ.get("STACKATLAS_MODEL", "claude-sonnet-4-5")
+MODEL = os.environ.get("STACKATLAS_MODEL", "sonnet")
 VALID_STATUS = {"healthy", "warning", "critical"}
 
 SYSTEM = """You are a senior data engineer writing a database catalog.
@@ -60,14 +64,36 @@ def _table_payload(table, edges):
     }
 
 
-def _call(client, payload, extra=None):
-    messages = [{"role": "user", "content": json.dumps(payload)}]
+def _strip_fences(text):
+    """Defensive: strip a ```json ... ``` fence if the model added one anyway."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else ""
+        if text.endswith("```"):
+            text = text[: -3]
+    return text.strip()
+
+
+def _call(payload, extra=None):
+    prompt = json.dumps(payload)
     if extra:
-        messages.append({"role": "user", "content": extra})
-    msg = client.messages.create(
-        model=MODEL, max_tokens=1200, system=SYSTEM, messages=messages,
+        prompt += "\n\n" + extra
+    proc = subprocess.run(
+        ["claude", "-p", prompt,
+         "--model", MODEL,
+         "--system-prompt", SYSTEM,
+         "--tools", "",
+         "--setting-sources", "",
+         "--output-format", "json",
+         "--no-session-persistence"],
+        capture_output=True, text=True, timeout=180,
     )
-    return msg.content[0].text.strip()
+    if proc.returncode != 0:
+        raise RuntimeError(f"claude -p exited {proc.returncode}: {proc.stderr.strip()}")
+    data = json.loads(proc.stdout)
+    if data.get("is_error"):
+        raise RuntimeError(f"claude -p error: {data.get('result')}")
+    return _strip_fences(data["result"])
 
 
 def _merge(table, result):
@@ -94,9 +120,9 @@ def _local_violations(table):
     return v
 
 
-def document_table(client, table, edges):
+def document_table(table, edges):
     payload = _table_payload(table, edges)
-    text = _call(client, payload)
+    text = _call(payload)
     try:
         result = json.loads(text)
     except json.JSONDecodeError:
@@ -110,7 +136,7 @@ def document_table(client, table, edges):
         # self-verify failed → re-prompt once with the specific complaint
         complaint = ("Your previous output violated: " + "; ".join(problems)
                      + ". Return corrected STRICT JSON only.")
-        text = _call(client, payload, extra=complaint)
+        text = _call(payload, extra=complaint)
         try:
             _merge(table, json.loads(text))
             if not _local_violations(table):
@@ -144,10 +170,8 @@ def main(path):
     with open(path) as f:
         catalog = json.load(f)
 
-    import anthropic  # imported here so the pure helpers stay dependency-free
-    client = anthropic.Anthropic()
     for table in catalog["tables"]:
-        document_table(client, table, catalog.get("edges", []))
+        document_table(table, catalog.get("edges", []))
         print(f"[docgen] {table['name']}: {table['status']}, "
               f"{len(table.get('issues', []))} issue(s)", file=sys.stderr)
 
