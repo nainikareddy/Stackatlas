@@ -9,6 +9,9 @@ dev:                ## run the dashboard (http://localhost:3000)
 eval:               ## score the shipped demo catalog against gold labels
 	python -m evals.run_eval
 
+eval-sql:           ## hackathon task: baseline vs StackAtlas-MCP agent writing SQL (needs db-up)
+	python -m evals.run_sql_eval
+
 test:               ## run the full test + self-verification suite
 	python -m pytest -q
 
