@@ -1,0 +1,21 @@
+# One-command reproducible Postgres for StackAtlas.
+#   make db-up   -> vibeshop schema seeded + stats warmed, ready on localhost:5433
+# Judges never install or seed a database by hand; Docker is the only assumption.
+services:
+  db:
+    image: postgres:16
+    container_name: stackatlas_vibeshop
+    environment:
+      POSTGRES_USER: stackatlas
+      POSTGRES_PASSWORD: stackatlas
+      POSTGRES_DB: vibeshop
+    ports:
+      - "5433:5432"          # host 5433 avoids clashing with a local Postgres on 5432
+    volumes:
+      - ./db/seed.sql:/docker-entrypoint-initdb.d/01_seed.sql:ro
+      - ./db/02_warm_stats.sql:/docker-entrypoint-initdb.d/02_warm_stats.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stackatlas -d vibeshop"]
+      interval: 3s
+      timeout: 3s
+      retries: 20

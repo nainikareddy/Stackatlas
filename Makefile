@@ -21,3 +21,25 @@ pipeline:           ## run introspection + docgen against $(DSN)
 
 clean:
 	rm -rf .next node_modules __pycache__ */__pycache__ .pytest_cache catalog_raw.json
+
+# --- Reproducible Postgres (hackathon) ---------------------------------------
+DSN ?= postgresql://stackatlas:stackatlas@localhost:5433/vibeshop
+
+.PHONY: db-up db-wait db-down db-reset
+
+# start dockerized Postgres + seed vibeshop, then block until ready
+db-up:
+	docker compose up -d
+	$(MAKE) db-wait
+
+# block until Postgres accepts connections
+db-wait:
+	@until docker compose exec -T db pg_isready -U stackatlas -d vibeshop >/dev/null 2>&1; do sleep 1; done; echo "vibeshop ready on localhost:5433"
+
+# stop and delete the database (fresh next time)
+db-down:
+	docker compose down -v
+
+# rebuild the database from seed
+db-reset: db-down db-up
+
