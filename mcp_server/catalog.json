@@ -1,585 +1,892 @@
 {
-  "database": "vibeshop (Postgres 16)",
-  "generatedAt": "2026-07-05T09:14:00Z",
-  "healthScore": 61,
-  "stats": {
-    "tables": 14,
-    "columns": 61,
-    "fkCoverage": 0.27,
-    "docCoverage": 1,
-    "orphans": 3
-  },
+  "database": "vibeshop",
   "tables": [
-    {
-      "name": "users",
-      "rows": 4,
-      "status": "healthy",
-      "readsPerDay": 18400,
-      "writesPerDay": 120,
-      "doc": "Core identity table. One row per registered account. `plan` drives feature gating in app code (values: free, pro, team \u2014 not enforced by constraint). Linked to Stripe via `stripe_customer_id`.",
-      "issues": [
-        "No unique index on email \u2014 duplicate accounts possible"
-      ],
-      "columns": [
-        {
-          "name": "id",
-          "type": "bigint",
-          "doc": "Primary key, referenced (often without FKs) across the schema."
-        },
-        {
-          "name": "email",
-          "type": "text",
-          "doc": "Login identifier. NOT unique-indexed.",
-          "flag": true
-        },
-        {
-          "name": "name",
-          "type": "text",
-          "doc": "Display name."
-        },
-        {
-          "name": "plan",
-          "type": "text",
-          "doc": "Billing tier: 'free' | 'pro' | 'team'. Enforced in app code only.",
-          "flag": true
-        },
-        {
-          "name": "stripe_customer_id",
-          "type": "text",
-          "doc": "Stripe customer ref; null for free users."
-        },
-        {
-          "name": "created_at",
-          "type": "timestamptz",
-          "doc": "Signup time."
-        }
-      ]
-    },
-    {
-      "name": "user_prefs",
-      "rows": 2,
-      "status": "warning",
-      "readsPerDay": 2100,
-      "writesPerDay": 40,
-      "doc": "Per-user settings blob. `prefs` jsonb observed shape: {theme, digest, beta}. No FK to users \u2014 rows can outlive their user.",
-      "issues": [
-        "Missing FK: user_id \u2192 users.id",
-        "Undocumented jsonb shape",
-        "No primary key"
-      ],
-      "columns": [
-        {
-          "name": "user_id",
-          "type": "bigint",
-          "doc": "Logical FK to users.id (not enforced).",
-          "flag": true
-        },
-        {
-          "name": "prefs",
-          "type": "jsonb",
-          "doc": "Observed keys: theme ('dark'|'light'), digest ('daily'|'off'), beta (bool).",
-          "flag": true
-        },
-        {
-          "name": "updated",
-          "type": "timestamptz",
-          "doc": "Last write. Named inconsistently vs updated_at elsewhere."
-        }
-      ]
-    },
-    {
-      "name": "workspaces",
-      "rows": 2,
-      "status": "warning",
-      "readsPerDay": 9200,
-      "writesPerDay": 15,
-      "doc": "Team container. camelCase columns (\"ownerId\", \"createdAt\") \u2014 created by an AI codegen session, breaks the snake_case convention used everywhere else.",
-      "issues": [
-        "Missing FK: ownerId \u2192 users.id",
-        "Naming drift: camelCase columns"
-      ],
-      "columns": [
-        {
-          "name": "id",
-          "type": "bigint",
-          "doc": "Primary key."
-        },
-        {
-          "name": "ownerId",
-          "type": "bigint",
-          "doc": "Logical FK to users.id (not enforced). camelCase.",
-          "flag": true
-        },
-        {
-          "name": "name",
-          "type": "text",
-          "doc": "Workspace display name."
-        },
-        {
-          "name": "createdAt",
-          "type": "timestamptz",
-          "doc": "Creation time. camelCase.",
-          "flag": true
-        }
-      ]
-    },
-    {
-      "name": "orders",
-      "rows": 2,
-      "status": "critical",
-      "readsPerDay": 30,
-      "writesPerDay": 0,
-      "doc": "LEGACY. Replaced by orders_v2 in Aug 2025 but never dropped. Still referenced by order_items.order_id \u2014 the FK was never re-pointed. Do not build new features on this table.",
-      "issues": [
-        "Deprecated but still FK-referenced by order_items",
-        "Zero writes in 90 days"
-      ],
-      "columns": [
-        {
-          "name": "id",
-          "type": "bigint",
-          "doc": "Primary key. Still the FK target of order_items (bug).",
-          "flag": true
-        },
-        {
-          "name": "user_id",
-          "type": "bigint",
-          "doc": "FK to users.id (one of the few real FKs)."
-        },
-        {
-          "name": "total",
-          "type": "numeric(10,2)",
-          "doc": "Order total in dollars (v2 uses cents)."
-        },
-        {
-          "name": "status",
-          "type": "text",
-          "doc": "Full-word statuses ('completed') \u2014 different vocabulary than v2."
-        },
-        {
-          "name": "created_at",
-          "type": "timestamptz",
-          "doc": "Creation time."
-        }
-      ]
-    },
-    {
-      "name": "orders_v2",
-      "rows": 5,
-      "status": "warning",
-      "readsPerDay": 24600,
-      "writesPerDay": 340,
-      "doc": "The live orders table \u2014 highest-traffic table in the schema. Revenue queries should filter status='c'. Magic single-char statuses: 'p'=pending, 'c'=complete, 'x'=cancelled, 'r'=refunded. FK to users was dropped during a hotfix migration and never restored.",
-      "issues": [
-        "Missing FK: user_id \u2192 users.id",
-        "Missing FK: workspace_id \u2192 workspaces.id",
-        "Magic status values ('p','c','x','r')"
-      ],
-      "columns": [
-        {
-          "name": "id",
-          "type": "bigint",
-          "doc": "Primary key."
-        },
-        {
-          "name": "user_id",
-          "type": "bigint",
-          "doc": "Logical FK to users.id (dropped in hotfix, not restored).",
-          "flag": true
-        },
-        {
-          "name": "workspace_id",
-          "type": "bigint",
-          "doc": "Logical FK to workspaces.id (not enforced).",
-          "flag": true
-        },
-        {
-          "name": "amount_cents",
-          "type": "integer",
-          "doc": "Order value in cents (legacy orders used dollars)."
-        },
-        {
-          "name": "status",
-          "type": "text",
-          "doc": "'p'=pending 'c'=complete 'x'=cancelled 'r'=refunded. Enforced nowhere.",
-          "flag": true
-        },
-        {
-          "name": "meta",
-          "type": "jsonb",
-          "doc": "Observed keys: src ('web'|'api'), coupon, reason."
-        },
-        {
-          "name": "created_at",
-          "type": "timestamptz",
-          "doc": "Creation time."
-        }
-      ]
-    },
-    {
-      "name": "order_items",
-      "rows": 0,
-      "status": "critical",
-      "readsPerDay": 8800,
-      "writesPerDay": 0,
-      "doc": "Line items. BUG: order_id still has an FK to legacy `orders`, not `orders_v2` \u2014 inserts against v2 order ids fail the constraint, which is why the table is empty and app code stuffs line items into orders_v2.meta instead.",
-      "issues": [
-        "FK points at deprecated table (orders, should be orders_v2)",
-        "Empty despite 8.8k reads/day \u2014 app worked around it"
-      ],
-      "columns": [
-        {
-          "name": "id",
-          "type": "bigint",
-          "doc": "Primary key."
-        },
-        {
-          "name": "order_id",
-          "type": "bigint",
-          "doc": "FK \u2192 orders.id (WRONG TARGET \u2014 should be orders_v2).",
-          "flag": true
-        },
-        {
-          "name": "product_id",
-          "type": "bigint",
-          "doc": "Logical FK to products.id (not enforced).",
-          "flag": true
-        },
-        {
-          "name": "qty",
-          "type": "integer",
-          "doc": "Quantity, default 1."
-        },
-        {
-          "name": "unit_price_cents",
-          "type": "integer",
-          "doc": "Price snapshot at purchase time."
-        }
-      ]
-    },
-    {
-      "name": "products",
-      "rows": 3,
-      "status": "healthy",
-      "readsPerDay": 15200,
-      "writesPerDay": 2,
-      "doc": "Sellable SKUs (currently: subscription plans and seat add-ons). Prices in cents. `active` soft-deletes.",
-      "issues": [],
-      "columns": [
-        {
-          "name": "id",
-          "type": "bigint",
-          "doc": "Primary key."
-        },
-        {
-          "name": "sku",
-          "type": "text",
-          "doc": "Human-readable SKU (e.g. PLN-PRO)."
-        },
-        {
-          "name": "title",
-          "type": "text",
-          "doc": "Display title."
-        },
-        {
-          "name": "price_cents",
-          "type": "integer",
-          "doc": "Current list price in cents."
-        },
-        {
-          "name": "active",
-          "type": "boolean",
-          "doc": "Soft-delete flag."
-        },
-        {
-          "name": "created_at",
-          "type": "timestamptz",
-          "doc": "Creation time."
-        }
-      ]
-    },
-    {
-      "name": "product_catalog_old",
-      "rows": 1,
-      "status": "critical",
-      "readsPerDay": 0,
-      "writesPerDay": 0,
-      "doc": "Orphan. Pre-migration product catalog, zero reads since Aug 2025. Uses FLOAT for money. Safe to archive and drop.",
-      "issues": [
-        "Orphaned: zero reads in 90 days",
-        "FLOAT used for currency"
-      ],
-      "columns": [
-        {
-          "name": "pid",
-          "type": "integer",
-          "doc": "Old primary key (no constraint)."
-        },
-        {
-          "name": "name",
-          "type": "varchar(255)",
-          "doc": "Product name."
-        },
-        {
-          "name": "price",
-          "type": "float",
-          "doc": "Price in dollars as float \u2014 precision hazard.",
-          "flag": true
-        },
-        {
-          "name": "cat",
-          "type": "varchar(64)",
-          "doc": "Category slug."
-        }
-      ]
-    },
-    {
-      "name": "payments",
-      "rows": 3,
-      "status": "warning",
-      "readsPerDay": 6400,
-      "writesPerDay": 90,
-      "doc": "Payment records reconciled from Stripe webhooks. `state` uses Stripe vocabulary ('succeeded','refunded') \u2014 a third status vocabulary in this schema. No FK to orders_v2; reconciliation happens in app code.",
-      "issues": [
-        "Missing FK: order_id \u2192 orders_v2.id",
-        "Third status vocabulary in schema"
-      ],
-      "columns": [
-        {
-          "name": "id",
-          "type": "bigint",
-          "doc": "Primary key."
-        },
-        {
-          "name": "order_id",
-          "type": "bigint",
-          "doc": "Logical FK to orders_v2.id (not enforced).",
-          "flag": true
-        },
-        {
-          "name": "stripe_event_id",
-          "type": "text",
-          "doc": "Joins to stripe_events.id."
-        },
-        {
-          "name": "amount_cents",
-          "type": "integer",
-          "doc": "Captured amount in cents."
-        },
-        {
-          "name": "state",
-          "type": "text",
-          "doc": "Stripe-style: 'succeeded' | 'refunded' | 'failed'.",
-          "flag": true
-        },
-        {
-          "name": "created_at",
-          "type": "timestamptz",
-          "doc": "Record creation."
-        }
-      ]
-    },
-    {
-      "name": "stripe_events",
-      "rows": 3,
-      "status": "warning",
-      "readsPerDay": 300,
-      "writesPerDay": 90,
-      "doc": "Raw Stripe webhook payloads, append-only. ~40MB and growing; no retention policy. Source of truth for payments reconciliation.",
-      "issues": [
-        "No retention policy \u2014 unbounded growth",
-        "Undocumented jsonb payloads"
-      ],
-      "columns": [
-        {
-          "name": "id",
-          "type": "text",
-          "doc": "Stripe event id (evt_...). Primary key."
-        },
-        {
-          "name": "payload",
-          "type": "jsonb",
-          "doc": "Full webhook body. Observed types: payment_intent.succeeded, charge.refunded.",
-          "flag": true
-        },
-        {
-          "name": "received_at",
-          "type": "timestamptz",
-          "doc": "Ingestion time."
-        }
-      ]
-    },
-    {
-      "name": "sessions",
-      "rows": 0,
-      "status": "healthy",
-      "readsPerDay": 41000,
-      "writesPerDay": 800,
-      "doc": "Auth session tokens. Hottest read path in the DB. Expired rows cleaned by a cron the team hopes still runs.",
-      "issues": [],
-      "columns": [
-        {
-          "name": "token",
-          "type": "text",
-          "doc": "Opaque session token. Primary key."
-        },
-        {
-          "name": "user_id",
-          "type": "bigint",
-          "doc": "FK to users.id (enforced)."
-        },
-        {
-          "name": "expires_at",
-          "type": "timestamptz",
-          "doc": "Expiry; rows past this are dead weight."
-        }
-      ]
-    },
     {
       "name": "analytics_events",
       "rows": 3,
-      "status": "warning",
-      "readsPerDay": 1200,
-      "writesPerDay": 5200,
-      "doc": "Product analytics firehose. `uid` means user_id (naming drift). `ts` is unix epoch seconds while the rest of the schema uses timestamptz \u2014 every join needs to_timestamp().",
-      "issues": [
-        "Missing FK: uid \u2192 users.id",
-        "Naming drift: uid vs user_id",
-        "Epoch integer timestamps vs timestamptz"
-      ],
+      "readsPerDay": 41,
+      "writesPerDay": 3,
+      "orphanCandidate": false,
+      "pos": {
+        "x": 120,
+        "y": 90
+      },
       "columns": [
         {
           "name": "id",
           "type": "bigint",
-          "doc": "Primary key."
+          "nullable": false,
+          "default": "nextval('analytics_events_id_seq'::regclass)",
+          "doc": "Auto-incrementing primary key generated from analytics_events_id_seq.",
+          "flag": false
         },
         {
           "name": "uid",
           "type": "bigint",
-          "doc": "user_id under another name. Not enforced.",
+          "nullable": true,
+          "default": null,
+          "doc": "Nullable reference to users.id representing the acting user, but not enforced by a foreign key so it can point to nonexistent or deleted users.",
           "flag": true
         },
         {
           "name": "event",
           "type": "text",
-          "doc": "Event name, free-form (page_view, run_report, ...)."
+          "nullable": true,
+          "default": null,
+          "doc": "Free-text event name with no enum or check constraint, making naming consistency entirely dependent on producers.",
+          "flag": true
         },
         {
           "name": "props",
           "type": "jsonb",
-          "doc": "Event properties, shape varies by event."
+          "nullable": true,
+          "default": null,
+          "doc": "Unstructured JSONB payload for event-specific properties with no schema enforcement, so structure may vary by event type or version.",
+          "flag": true
         },
         {
           "name": "ts",
           "type": "bigint",
-          "doc": "Unix epoch seconds. Convert with to_timestamp(ts).",
+          "nullable": true,
+          "default": null,
+          "doc": "Bigint epoch timestamp of the event with no documented unit (seconds vs milliseconds) or timezone, unlike a native timestamptz.",
           "flag": true
         }
-      ]
+      ],
+      "doc": "Stores generic product analytics events (event name + arbitrary JSON payload) keyed loosely to a user via 'uid'; currently a tiny, low-traffic table (~3 rows, 41 reads/day, 3 writes/day), suggesting it's either newly instrumented or only lightly used/tested. 'ts' is a bigint epoch timestamp rather than a native timestamp type, and 'uid' has no enforced foreign key to 'users', so referential integrity depends entirely on application code.",
+      "issues": [
+        "uid -> users relationship is not enforced by a foreign key, allowing orphaned or invalid uid values",
+        "ts is stored as bigint (epoch) instead of a timestamp/timestamptz type, with no documented unit (seconds vs milliseconds) or timezone convention",
+        "event is a free-text column with no enum/check constraint, risking inconsistent naming (casing, typos, synonyms) across producers",
+        "uid, event, ts, and props are all nullable, so core fields needed to interpret an event (who, what, when) can be missing entirely",
+        "props is unconstrained jsonb with no schema validation, so payload shape can drift silently across event types or app versions"
+      ],
+      "status": "warning"
     },
     {
       "name": "feature_flags",
       "rows": 2,
-      "status": "healthy",
-      "readsPerDay": 52000,
-      "writesPerDay": 1,
-      "doc": "Runtime feature flags. `rollout` jsonb: {pct, allow:[user_ids]}. Read on nearly every request \u2014 most-read table in the schema.",
-      "issues": [],
+      "readsPerDay": 1,
+      "writesPerDay": 2,
+      "orphanCandidate": false,
+      "pos": {
+        "x": 330,
+        "y": 90
+      },
       "columns": [
         {
           "name": "flag",
           "type": "text",
-          "doc": "Flag key. Primary key."
+          "nullable": false,
+          "default": null,
+          "doc": "The unique identifier/name of the feature flag; should be the primary key but uniqueness is not guaranteed by the given schema.",
+          "flag": true
         },
         {
           "name": "enabled",
           "type": "boolean",
-          "doc": "Master switch."
+          "nullable": true,
+          "default": "false",
+          "doc": "Boolean toggle for whether the flag is active, but nullable so 'unset' is ambiguous with 'false'.",
+          "flag": true
         },
         {
           "name": "rollout",
           "type": "jsonb",
-          "doc": "{pct: 0-100, allow: [user ids]} \u2014 allow list bypasses pct."
+          "nullable": true,
+          "default": null,
+          "doc": "Optional JSON blob describing rollout targeting rules (e.g., percentage or user segments) with no enforced schema.",
+          "flag": true
         }
-      ]
+      ],
+      "doc": "Stores feature flag definitions used to toggle application features on/off, with optional JSON-based rollout configuration (e.g., percentage or cohort targeting). Extremely low volume (2 rows, 1 read/day) suggests this is either a new/underused system or flags are cached elsewhere after being read; engineers should confirm whether the app actually queries this table at runtime or relies on a cache/env vars instead. No primary key is declared on 'flag', so uniqueness is not enforced by schema alone.",
+      "issues": [
+        "No explicit primary key or unique constraint shown on 'flag', so duplicate flag names could be inserted",
+        "'enabled' is nullable, creating a three-state boolean (true/false/null) with unclear semantics for null \u2014 likely should default to false and be NOT NULL",
+        "'rollout' jsonb has no schema/shape validation, so structure can drift silently across the only 2 rows without anyone noticing",
+        "Very low read count (1/day) is suspicious for a feature flag table \u2014 may indicate flags are read once at boot and cached, meaning stale flags could persist until restart",
+        "No created_at/updated_at timestamps, so there's no audit trail for when a flag was toggled or added"
+      ],
+      "status": "warning"
+    },
+    {
+      "name": "order_items",
+      "rows": 0,
+      "readsPerDay": 41,
+      "writesPerDay": 0,
+      "orphanCandidate": false,
+      "pos": {
+        "x": 540,
+        "y": 90
+      },
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "default": "nextval('order_items_id_seq'::regclass)",
+          "doc": "Auto-incrementing primary key generated from order_items_id_seq.",
+          "flag": false
+        },
+        {
+          "name": "order_id",
+          "type": "bigint",
+          "nullable": true,
+          "default": null,
+          "doc": "References the parent order, but its enforced FK points to the deprecated 'orders' table instead of the live 'orders_v2' table.",
+          "flag": true
+        },
+        {
+          "name": "product_id",
+          "type": "bigint",
+          "nullable": true,
+          "default": null,
+          "doc": "Intended reference to products.id but has no enforced foreign key, so orphaned or invalid product IDs are possible.",
+          "flag": true
+        },
+        {
+          "name": "qty",
+          "type": "integer",
+          "nullable": true,
+          "default": "1",
+          "doc": "Quantity of the product ordered, defaults to 1 but is nullable so NULL values can silently break total calculations.",
+          "flag": true
+        },
+        {
+          "name": "unit_price_cents",
+          "type": "integer",
+          "nullable": true,
+          "default": null,
+          "doc": "Price per unit stored as integer cents (not a float) at time of purchase, but is nullable and unconstrained so missing or invalid prices are possible.",
+          "flag": true
+        }
+      ],
+      "doc": "order_items stores line items (product + quantity + price) for orders, linking to orders via order_id and to products via product_id; unit_price_cents captures price in integer cents at time of purchase. Currently empty (0 rows) with modest read traffic and zero writes, suggesting it is either newly created, unused, or being phased out in favor of a v2 pipeline. Critical: the enforced FK on order_id still points to the deprecated 'orders' table while live order data lives in 'orders_v2', so any new writes or joins against 'orders' will silently miss current orders.",
+      "issues": [
+        "Enforced FK (order_id -> orders.id) targets a deprecated table; live orders are in orders_v2, causing broken/misleading referential integrity",
+        "No FK relationship to orders_v2 at all (relationship exists but is unenforced), so order_id values referencing orders_v2 rows aren't validated by the database",
+        "product_id has no enforced FK to products, allowing orphaned/nonexistent product references",
+        "order_id and product_id are nullable, permitting line items with no associated order or product",
+        "qty defaults to 1 but is nullable, allowing NULL quantities that break downstream sum/aggregate logic",
+        "unit_price_cents has no NOT NULL or CHECK constraint, allowing missing or negative prices",
+        "Table has 0 rows and 0 writes/day despite 41 reads/day, indicating readers may be querying a stale/empty table or the write path has moved elsewhere unnoticed"
+      ],
+      "status": "critical"
+    },
+    {
+      "name": "orders",
+      "rows": 2,
+      "readsPerDay": 41,
+      "writesPerDay": 2,
+      "orphanCandidate": false,
+      "pos": {
+        "x": 750,
+        "y": 90
+      },
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "default": "nextval('orders_id_seq'::regclass)",
+          "doc": "Auto-incrementing primary key generated from the orders_id_seq sequence.",
+          "flag": false
+        },
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "nullable": true,
+          "default": null,
+          "doc": "References users.id via an enforced FK but is nullable, so orphan-owner orders are possible.",
+          "flag": true
+        },
+        {
+          "name": "total",
+          "type": "numeric",
+          "nullable": true,
+          "default": null,
+          "doc": "Nullable numeric order total with no explicit currency unit or non-negative constraint.",
+          "flag": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "doc": "Free-text order status with no enum or CHECK constraint enforcing allowed values.",
+          "flag": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": "now()",
+          "doc": "Timestamptz defaulting to now() on insert, but still nullable so the default can be bypassed.",
+          "flag": true
+        }
+      ],
+      "doc": "The `orders` table is a small, low-traffic (~2 rows) order-header table storing user_id, total, status, and creation timestamp. It is effectively deprecated: `order_items.order_id` still has an FK pointing here but the actual live order data has moved to `orders_v2`, so any consumer joining through `order_items` may be reading stale or orphaned rows here rather than current data.",
+      "issues": [
+        "order_items -> orders FK is broken/stale: live order data now lives in orders_v2, so this table is likely deprecated but still referenced, risking silent reads of stale data",
+        "user_id is nullable despite an enforced FK to users, allowing orders with no owner",
+        "total is nullable numeric with no currency/unit column, and no CHECK constraint preventing negative values",
+        "status is an unconstrained free-text column with no enum/check constraint, allowing inconsistent or invalid values",
+        "created_at is nullable even though it defaults to now(), which can produce misleading null timestamps if the default is bypassed",
+        "table has only ~2 rows despite 41 reads/day, suggesting it may be near-unused test/legacy data rather than a real production table"
+      ],
+      "status": "critical"
+    },
+    {
+      "name": "orders_v2",
+      "rows": 5,
+      "readsPerDay": 42,
+      "writesPerDay": 5,
+      "orphanCandidate": false,
+      "pos": {
+        "x": 120,
+        "y": 240
+      },
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "default": "nextval('orders_v2_id_seq'::regclass)",
+          "doc": "Auto-incrementing primary key generated from the orders_v2_id_seq sequence.",
+          "flag": false
+        },
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "nullable": true,
+          "default": null,
+          "doc": "References the owning user in the users table, but the FK is not DB-enforced so dangling references are possible.",
+          "flag": true
+        },
+        {
+          "name": "workspace_id",
+          "type": "bigint",
+          "nullable": true,
+          "default": null,
+          "doc": "References the associated workspace, but the FK is not DB-enforced so orphaned links can occur.",
+          "flag": true
+        },
+        {
+          "name": "amount_cents",
+          "type": "integer",
+          "nullable": true,
+          "default": null,
+          "doc": "Order total stored as an integer number of cents (no separate currency field), nullable with no default.",
+          "flag": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "nullable": true,
+          "default": "'p'::text",
+          "doc": "Single-character free-text order status code defaulting to 'p' with no enum or check constraint enforcing valid values.",
+          "flag": true
+        },
+        {
+          "name": "meta",
+          "type": "jsonb",
+          "nullable": true,
+          "default": null,
+          "doc": "Unstructured jsonb bag for arbitrary order metadata with no enforced schema.",
+          "flag": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": "now()",
+          "doc": "Timestamp of order creation, defaults to now() but is nullable so legacy/backfilled rows may lack a value.",
+          "flag": true
+        }
+      ],
+      "doc": "orders_v2 stores order records (currently only ~5 rows, likely a low-volume or newly-migrated table) with amount in cents and a single-character status code defaulting to 'p' (presumably 'pending'). The '_v2' naming implies a prior 'orders' table was superseded, but no version/migration notes exist here, and none of the foreign keys (user_id, workspace_id) or inbound references (order_items, payments) are DB-enforced, so referential integrity relies entirely on application logic.",
+      "issues": [
+        "No enforced foreign keys on user_id or workspace_id \u2014 orphaned orders possible if referenced users/workspaces are deleted",
+        "order_items.order_id and payments.order_id reference orders_v2 without enforced constraints \u2014 orphaned child rows possible if an order is deleted",
+        "status is an unconstrained free-text field defaulting to 'p' with no enum/check constraint or documented value set \u2014 high risk of typos and inconsistent codes over time",
+        "user_id, workspace_id, and amount_cents are nullable with no default, making it unclear if a null amount/order-without-user is valid or a data-entry gap",
+        "amount_cents stored as integer (cents) is fine for money-as-int, but no currency column exists \u2014 ambiguous for multi-currency support",
+        "created_at is nullable despite defaulting to now(), so backfilled/legacy rows could have NULL timestamps, breaking chronological assumptions",
+        "'_v2' suffix suggests a schema migration from a legacy 'orders' table with no documented cutover date or reconciliation status",
+        "meta jsonb column has no schema/validation, making its contents unpredictable across rows"
+      ],
+      "status": "critical"
+    },
+    {
+      "name": "payments",
+      "rows": 3,
+      "readsPerDay": 41,
+      "writesPerDay": 3,
+      "orphanCandidate": false,
+      "pos": {
+        "x": 330,
+        "y": 240
+      },
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "default": "nextval('payments_id_seq'::regclass)",
+          "doc": "Auto-incrementing primary key for the payment record.",
+          "flag": false
+        },
+        {
+          "name": "order_id",
+          "type": "bigint",
+          "nullable": true,
+          "default": null,
+          "doc": "Points to orders_v2.id but is nullable and not enforced by a foreign key, so it can silently reference nonexistent or deleted orders.",
+          "flag": true
+        },
+        {
+          "name": "stripe_event_id",
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "doc": "Stores the originating Stripe event identifier for idempotency/reconciliation, but lacks a uniqueness constraint to actually prevent duplicate processing.",
+          "flag": true
+        },
+        {
+          "name": "amount_cents",
+          "type": "integer",
+          "nullable": true,
+          "default": null,
+          "doc": "Payment amount in integer cents (not dollars) to avoid floating-point rounding errors, but is nullable so amount-less rows can exist.",
+          "flag": true
+        },
+        {
+          "name": "state",
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "doc": "Free-text payment status (e.g. pending/succeeded/failed) with no enum or CHECK constraint enforcing allowed values.",
+          "flag": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": "now()",
+          "doc": "Timestamptz defaulting to insertion time; represents only creation, since there is no updated_at to track state changes.",
+          "flag": true
+        }
+      ],
+      "doc": "Tracks payment attempts/records tied to orders, keyed to Stripe events via stripe_event_id; at only ~3 rows and 3 writes/day this is likely a low-volume, possibly test/staging or newly-launched table. Amounts are stored in cents (integer) rather than a currency-aware money type, and the link to orders_v2 is a soft, unenforced relationship rather than a real foreign key. The 'orders_v2' naming suggests a prior orders table was replaced/migrated, which new engineers should be aware of when joining.",
+      "issues": [
+        "order_id references orders_v2 but has no enforced foreign key, allowing orphaned payments if orders are deleted or IDs are mistyped",
+        "state is an unconstrained free-text column with no CHECK constraint or enum, risking inconsistent/typo'd status values (e.g. 'paid' vs 'Paid' vs 'succeeded')",
+        "stripe_event_id has no NOT NULL or UNIQUE constraint, so duplicate Stripe webhook deliveries could create duplicate payment rows",
+        "amount_cents, order_id, stripe_event_id, state, and created_at are all nullable despite being core to a payment record, allowing incomplete/garbage rows",
+        "created_at defaults to now() but there is no updated_at, so state transitions (e.g. pending -> succeeded) can't be audited or ordered in time",
+        "'orders_v2' naming implies a legacy/renamed orders table exists, creating ambiguity about which orders table is canonical"
+      ],
+      "status": "critical"
+    },
+    {
+      "name": "product_catalog_old",
+      "rows": 1,
+      "readsPerDay": 0,
+      "writesPerDay": 1,
+      "orphanCandidate": false,
+      "pos": {
+        "x": 540,
+        "y": 240
+      },
+      "columns": [
+        {
+          "name": "pid",
+          "type": "integer",
+          "nullable": true,
+          "default": null,
+          "doc": "Intended primary key/product identifier but lacks a PRIMARY KEY constraint and is nullable, so uniqueness is not enforced.",
+          "flag": true
+        },
+        {
+          "name": "name",
+          "type": "character varying",
+          "nullable": true,
+          "default": null,
+          "doc": "Product display name stored as nullable varchar with no length or non-null constraint.",
+          "flag": false
+        },
+        {
+          "name": "price",
+          "type": "double precision",
+          "nullable": true,
+          "default": null,
+          "doc": "Product price stored as double precision (float), which risks floating-point rounding errors for currency and should be numeric/decimal instead.",
+          "flag": true
+        },
+        {
+          "name": "cat",
+          "type": "character varying",
+          "nullable": true,
+          "default": null,
+          "doc": "Free-text category abbreviation with no foreign key or enum constraint, allowing inconsistent or duplicate category values.",
+          "flag": true
+        }
+      ],
+      "doc": "product_catalog_old is a legacy, near-dead product table (1 row, 0 reads/day, 1 write/day) that appears to be superseded by a newer product_catalog table; the 'old' suffix and abbreviated column names (pid, cat) signal deprecated naming conventions no longer used elsewhere. New engineers should NOT build new features against this table and should confirm whether it can be dropped or archived.",
+      "issues": [
+        "Table name suggests deprecation ('_old' suffix) but is still receiving writes (1/day), indicating an unfinished migration or a lingering job that should be redirected or retired",
+        "No primary key or NOT NULL constraint enforced on 'pid' despite it being the obvious identifier, risking duplicate or null-keyed rows",
+        "All columns are nullable with no defaults, so there's no guarantee of data completeness (name, price, cat can all be null)",
+        "price stored as double precision (float) instead of a fixed-point/numeric/decimal type, risking rounding errors for monetary values",
+        "cat (category) is a free-text varchar with no FK to a categories table or enum constraint, allowing inconsistent/typo'd category values",
+        "No relationships defined at all, so referential integrity to any orders/inventory/category tables cannot be verified",
+        "Abbreviated, inconsistent column naming (pid, cat) diverges from likely fuller naming conventions (product_id, category) in current schema, increasing confusion for anyone querying across old/new tables"
+      ],
+      "status": "critical"
+    },
+    {
+      "name": "products",
+      "rows": 3,
+      "readsPerDay": 41,
+      "writesPerDay": 3,
+      "orphanCandidate": false,
+      "pos": {
+        "x": 750,
+        "y": 240
+      },
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "default": "nextval('products_id_seq'::regclass)",
+          "doc": "Auto-incrementing primary key generated via products_id_seq sequence.",
+          "flag": false
+        },
+        {
+          "name": "sku",
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "doc": "Nullable text stock-keeping-unit identifier with no visible uniqueness constraint, so duplicates or missing SKUs are possible.",
+          "flag": true
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "doc": "Nullable product display name; NULL titles will need fallback handling in the UI.",
+          "flag": true
+        },
+        {
+          "name": "price_cents",
+          "type": "integer",
+          "nullable": true,
+          "default": null,
+          "doc": "Product price stored as integer cents (correct pattern, avoids float rounding) but nullable, so a NULL must be treated as 'no price set' rather than zero.",
+          "flag": true
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "nullable": true,
+          "default": "true",
+          "doc": "Nullable boolean defaulting to true that flags whether the product is available; NULL is an ambiguous third state distinct from true/false.",
+          "flag": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": "now()",
+          "doc": "Timestamptz defaulting to now() at insert time, but nullable so it is not guaranteed to be populated for all rows.",
+          "flag": true
+        }
+      ],
+      "doc": "Stores the product catalog (currently tiny, ~3 rows) used for lookups when rendering orders and order_items; price is stored in integer cents (not float) which is good practice, but almost every column besides the primary key is nullable, meaning application code must not assume sku/title/price/active are populated. order_items references products.product_id but this FK is not enforced at the database level, so orphaned references are possible.",
+      "issues": [
+        "order_items.product_id -> products.id relationship is not DB-enforced, risking orphaned order_items or dangling references",
+        "sku, title, price_cents, and active are all nullable, allowing incomplete/invalid product records (e.g., a product with no price or name)",
+        "no unique constraint mentioned on sku, so duplicate SKUs could be inserted",
+        "active is nullable boolean instead of NOT NULL DEFAULT true, so NULL creates a third ambiguous state alongside true/false",
+        "created_at is nullable despite having a now() default, so backfilled or bulk-inserted rows could bypass the default and store NULL"
+      ],
+      "status": "warning"
+    },
+    {
+      "name": "sessions",
+      "rows": 0,
+      "readsPerDay": 1,
+      "writesPerDay": 0,
+      "orphanCandidate": false,
+      "pos": {
+        "x": 120,
+        "y": 390
+      },
+      "columns": [
+        {
+          "name": "token",
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "doc": "Opaque session token string used as the session identifier, but its uniqueness/PK constraint is not explicitly confirmed here.",
+          "flag": true
+        },
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "nullable": true,
+          "default": null,
+          "doc": "References users.id via an enforced foreign key, but is nullable which conflicts with the expectation that every session belongs to a user.",
+          "flag": true
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null,
+          "doc": "Timestamp (with timezone) marking when the session becomes invalid, but nullable expiry risks creating tokens that never expire.",
+          "flag": true
+        }
+      ],
+      "doc": "The sessions table stores authentication session tokens linking users to active login sessions, with expiration timestamps used to enforce logout/timeout behavior. Despite an enforced FK to users, the table currently has zero rows and near-zero traffic (1 read/day, 0 writes/day), suggesting it may be unused, replaced by an external session store (e.g. Redis/JWT), or a dead/deprecated feature. Any new engineer or agent should verify whether this table is still the source of truth for auth before building on it.",
+      "issues": [
+        "Table has 0 rows and 0 writes/day despite having reads, indicating it may be dead/orphaned code or session logic has moved elsewhere (e.g. Redis, JWT, cache)",
+        "user_id is nullable despite having an enforced FK, which is semantically odd for a session record \u2014 a session with no user is ambiguous (anonymous session? orphaned token?)",
+        "expires_at is nullable, meaning sessions could exist with no expiration, creating a security risk of permanently valid tokens",
+        "No primary key column indicated (token may be acting as PK but this isn't explicit/constrained as unique)",
+        "No created_at/issued_at timestamp, making it impossible to audit session age or detect stale/abandoned session rows"
+      ],
+      "status": "warning"
+    },
+    {
+      "name": "stripe_events",
+      "rows": 3,
+      "readsPerDay": 1,
+      "writesPerDay": 3,
+      "orphanCandidate": false,
+      "pos": {
+        "x": 330,
+        "y": 390
+      },
+      "columns": [
+        {
+          "name": "id",
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "doc": "Primary key expected to be Stripe's own event id (e.g., evt_xxx) used for idempotent webhook handling, but uniqueness/format is not enforced in the schema shown.",
+          "flag": true
+        },
+        {
+          "name": "payload",
+          "type": "jsonb",
+          "nullable": true,
+          "default": null,
+          "doc": "Full raw JSON body of the Stripe webhook event; nullable, so downstream code must defensively handle missing payloads before parsing.",
+          "flag": true
+        },
+        {
+          "name": "received_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": "now()",
+          "doc": "Timestamp the webhook was received, defaulting to now() but nullable, so ordering/auditing logic cannot assume it is always populated.",
+          "flag": true
+        }
+      ],
+      "doc": "Stores raw incoming Stripe webhook events, keyed by Stripe's event id, for auditing and idempotency checks before processing payment-related side effects. Extremely low volume (3 rows, ~3 writes/day) suggests this is either a new/low-traffic integration or events are being pruned/lost; the entire event payload lives in an unstructured jsonb blob with no derived columns for event type, processing status, or Stripe object id, so any consumer must parse payload to know what happened or whether it was handled.",
+      "issues": [
+        "No 'event_type' or 'processing_status' column, so there's no way to query which events are unprocessed, failed, or duplicates without parsing jsonb payload",
+        "'payload' is nullable, allowing empty/placeholder rows that break the audit trail Stripe events are meant to provide",
+        "'received_at' is nullable despite having a now() default, permitting NULL timestamps that break chronological ordering/debugging",
+        "No unique constraint documented on 'id' beyond being the PK assumption; if 'id' isn't enforced as Stripe's event id, replayed webhooks could duplicate or overwrite records",
+        "No relationships to other tables (e.g., charges, subscriptions, customers) means there's no FK trail linking a Stripe event to the internal record it affected, making reconciliation manual",
+        "No retention/TTL policy evident despite this typically being a high-churn log table; 3 rows total is suspiciously low for a webhook log and may indicate silent write failures or missing event subscriptions"
+      ],
+      "status": "warning"
     },
     {
       "name": "tmp_backfill_20250811",
       "rows": 0,
-      "status": "critical",
       "readsPerDay": 0,
       "writesPerDay": 0,
-      "doc": "Orphan. Scratch table from a one-off backfill script on 2025-08-11. Empty, unreferenced. Safe to drop immediately.",
-      "issues": [
-        "Orphaned: junk table from one-off script"
-      ],
+      "orphanCandidate": true,
+      "pos": {
+        "x": 540,
+        "y": 390
+      },
       "columns": [
         {
           "name": "row_data",
           "type": "jsonb",
-          "doc": "Backfill scratch payload."
+          "nullable": true,
+          "default": null,
+          "doc": "Nullable jsonb blob holding arbitrary backfill payloads with no enforced schema, so any consumer must defensively validate structure before use.",
+          "flag": true
         }
-      ]
+      ],
+      "doc": "This is a one-off backfill scratch table (name-dated 2025-08-11) intended to temporarily stage raw JSON payloads during a migration or data-repair job. It has zero rows, zero reads/writes, and is flagged as an orphan candidate \u2014 it should never be referenced by application code and exists purely as a historical artifact of a past manual operation.",
+      "issues": [
+        "Table appears fully orphaned: 0 rows, 0 reads/day, 0 writes/day, and no relationships, suggesting it was never cleaned up after the backfill completed",
+        "No primary key or unique constraint defined on any column, making rows unidentifiable and unsafe to reference or dedupe",
+        "Single 'row_data' jsonb column with no schema/validation means any shape of data could have been (or could be) dumped here, offering no data-integrity guarantees",
+        "Table name embeds a date (tmp_backfill_20250811) with no documented retention/expiry policy, risking indefinite accumulation of dead tables if this pattern is repeated",
+        "No relationships/foreign keys tie this table to source-of-truth tables, so provenance of any future data written here is untraceable",
+        "'tmp_' prefix signals throwaway/non-production intent but there is no automated TTL or drop mechanism enforcing that"
+      ],
+      "status": "critical"
+    },
+    {
+      "name": "user_prefs",
+      "rows": 2,
+      "readsPerDay": 0,
+      "writesPerDay": 2,
+      "orphanCandidate": false,
+      "pos": {
+        "x": 750,
+        "y": 390
+      },
+      "columns": [
+        {
+          "name": "user_id",
+          "type": "bigint",
+          "nullable": true,
+          "default": null,
+          "doc": "References the owning user in the users table, but this relationship is not enforced by a foreign key and the column itself is nullable.",
+          "flag": true
+        },
+        {
+          "name": "prefs",
+          "type": "jsonb",
+          "nullable": true,
+          "default": null,
+          "doc": "Arbitrary JSONB blob holding user preference key-value data with no enforced schema or required fields.",
+          "flag": true
+        },
+        {
+          "name": "updated",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": null,
+          "doc": "Timestamptz meant to record the last modification time, but it is nullable and has no default, so staleness or nulls can go undetected.",
+          "flag": true
+        }
+      ],
+      "doc": "user_prefs stores per-user preference blobs (arbitrary JSON) keyed by user_id, with an updated timestamp for last write. Table is nearly unused (2 rows, 0 reads/day, 2 writes/day), suggesting it's either newly introduced, a legacy/dead feature, or written to but never actually consumed by the application. The user_id-to-users link is not enforced at the DB level, so referential integrity depends entirely on application code.",
+      "issues": [
+        "user_id has no NOT NULL constraint and no foreign key to users, so rows can reference nonexistent or null users with no DB-level protection",
+        "No primary key or unique constraint specified on user_id, so duplicate preference rows per user are possible",
+        "prefs is an unconstrained jsonb blob with no schema validation, making it easy for inconsistent or malformed preference keys to accumulate silently",
+        "updated is nullable with no default (e.g., not auto-set via trigger or DEFAULT now()), so it can be null or go stale without any write actually updating it",
+        "0 reads/day despite 2 writes/day indicates this table may be write-only/dead code, or reads are happening through an uninstrumented path"
+      ],
+      "status": "warning"
+    },
+    {
+      "name": "users",
+      "rows": 4,
+      "readsPerDay": 43,
+      "writesPerDay": 4,
+      "orphanCandidate": false,
+      "pos": {
+        "x": 120,
+        "y": 540
+      },
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "default": "nextval('users_id_seq'::regclass)",
+          "doc": "Primary key surrogate identifier auto-generated via sequence; safe to use as the canonical user reference.",
+          "flag": false
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "nullable": false,
+          "default": null,
+          "doc": "User's login/contact email, required but lacking a visible unique constraint in this schema snapshot.",
+          "flag": true
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "doc": "Optional display name for the user with no format or length constraints.",
+          "flag": false
+        },
+        {
+          "name": "plan",
+          "type": "text",
+          "nullable": true,
+          "default": "'free'::text",
+          "doc": "Free-text subscription tier defaulting to 'free' with no enum/CHECK constraint enforcing valid values.",
+          "flag": true
+        },
+        {
+          "name": "stripe_customer_id",
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "doc": "Optional link to the Stripe billing customer record, unvalidated and unenforced as a foreign key to any billing table.",
+          "flag": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": "now()",
+          "doc": "Timestamp of account creation defaulting to now(), but nullable so it can be missing despite the default.",
+          "flag": true
+        }
+      ],
+      "doc": "Core identity table storing one row per registered user (currently tiny, ~4 rows, low write volume of ~4/day), referenced by orders, sessions, billing, and workspace ownership. Two relationships are properly FK-enforced (orders, sessions) but four others (analytics_events, orders_v2, user_prefs, workspaces) rely on unenforced application-level joins with inconsistent key naming (uid, user_id, ownerId), so referential integrity there is not guaranteed by the database.",
+      "issues": [
+        "analytics_events.uid, orders_v2.user_id, user_prefs.user_id, and workspaces.ownerId reference users.id without an enforced foreign key, risking orphaned rows.",
+        "Inconsistent foreign-key naming across dependents (user_id vs uid vs ownerId) increases risk of join bugs and schema drift.",
+        "orders_v2 existing alongside orders with an unenforced link to users suggests a partial/incomplete migration; unclear which table is authoritative.",
+        "plan is a free-text column with no CHECK constraint or enum, allowing typos or inconsistent plan values (e.g., 'free' vs 'Free' vs 'FREE').",
+        "email has no documented uniqueness constraint visible in the schema, risking duplicate accounts.",
+        "created_at is nullable despite defaulting to now(), allowing accidental NULLs that break chronological assumptions.",
+        "stripe_customer_id has no format validation or uniqueness constraint, risking duplicate or malformed billing links."
+      ],
+      "status": "warning"
+    },
+    {
+      "name": "workspaces",
+      "rows": 2,
+      "readsPerDay": 41,
+      "writesPerDay": 2,
+      "orphanCandidate": false,
+      "pos": {
+        "x": 330,
+        "y": 540
+      },
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint",
+          "nullable": false,
+          "default": "nextval('workspaces_id_seq'::regclass)",
+          "doc": "Auto-incrementing primary key generated from workspaces_id_seq.",
+          "flag": false
+        },
+        {
+          "name": "ownerId",
+          "type": "bigint",
+          "nullable": true,
+          "default": null,
+          "doc": "References a user's id as the workspace owner but has no enforced FK and is nullable, so it can point to a nonexistent or missing user.",
+          "flag": true
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "nullable": true,
+          "default": null,
+          "doc": "Free-text workspace display name with no default, no NOT NULL constraint, and no uniqueness enforcement.",
+          "flag": true
+        },
+        {
+          "name": "createdAt",
+          "type": "timestamp with time zone",
+          "nullable": true,
+          "default": "now()",
+          "doc": "Timestamp of workspace creation defaulting to now(), but nullability means the default can be bypassed.",
+          "flag": true
+        }
+      ],
+      "doc": "The workspaces table represents tenant/workspace containers that group orders and are owned by a user; it's tiny (2 rows) and low-traffic (41 reads/day, 2 writes/day), suggesting it's either early-stage or a fixed set of top-level orgs. New engineers must know that both the ownerId->users and orders_v2->workspaces relationships are NOT enforced at the DB level, so referential integrity depends entirely on application logic.",
+      "issues": [
+        "ownerId has no enforced foreign key to users, allowing orphaned or invalid owner references.",
+        "orders_v2.workspace_id -> workspaces relationship is unenforced, risking orphaned orders if a workspace is deleted or workspace_id is mistyped.",
+        "ownerId is nullable, so a workspace can exist with no owner, which may break assumptions in access-control or billing logic.",
+        "name is nullable with no default and no uniqueness constraint, allowing blank or duplicate workspace names.",
+        "createdAt is nullable despite having a now() default, so it can be explicitly set to NULL, undermining audit/ordering guarantees."
+      ],
+      "status": "warning"
     }
   ],
   "edges": [
     {
       "from": "orders",
       "to": "users",
-      "enforced": true
+      "enforced": true,
+      "via": "user_id -> id"
     },
     {
       "from": "order_items",
       "to": "orders",
       "enforced": true,
+      "via": "order_id -> id",
       "broken": true,
-      "note": "FK targets deprecated table",
-      "via": "order_id -> id"
+      "note": "FK targets deprecated table; live data is in orders_v2"
     },
     {
       "from": "sessions",
       "to": "users",
-      "enforced": true
-    },
-    {
-      "from": "user_prefs",
-      "to": "users",
-      "enforced": false
-    },
-    {
-      "from": "workspaces",
-      "to": "users",
-      "enforced": false
-    },
-    {
-      "from": "orders_v2",
-      "to": "users",
-      "enforced": false
-    },
-    {
-      "from": "orders_v2",
-      "to": "workspaces",
-      "enforced": false
-    },
-    {
-      "from": "order_items",
-      "to": "products",
-      "enforced": false
-    },
-    {
-      "from": "payments",
-      "to": "orders_v2",
-      "enforced": false
-    },
-    {
-      "from": "payments",
-      "to": "stripe_events",
-      "enforced": false
+      "enforced": true,
+      "via": "user_id -> id"
     },
     {
       "from": "analytics_events",
       "to": "users",
-      "enforced": false
+      "enforced": false,
+      "via": "uid"
+    },
+    {
+      "from": "order_items",
+      "to": "orders_v2",
+      "enforced": false,
+      "via": "order_id"
+    },
+    {
+      "from": "order_items",
+      "to": "products",
+      "enforced": false,
+      "via": "product_id"
+    },
+    {
+      "from": "orders_v2",
+      "to": "users",
+      "enforced": false,
+      "via": "user_id"
+    },
+    {
+      "from": "orders_v2",
+      "to": "workspaces",
+      "enforced": false,
+      "via": "workspace_id"
+    },
+    {
+      "from": "payments",
+      "to": "orders_v2",
+      "enforced": false,
+      "via": "order_id"
+    },
+    {
+      "from": "user_prefs",
+      "to": "users",
+      "enforced": false,
+      "via": "user_id"
+    },
+    {
+      "from": "workspaces",
+      "to": "users",
+      "enforced": false,
+      "via": "ownerId"
     }
-  ]
+  ],
+  "stats": {
+    "tables": 14,
+    "columns": 61,
+    "fkCoverage": 0.27,
+    "orphans": 1,
+    "docCoverage": 1.0
+  },
+  "healthScore": 0
 }
