@@ -36,6 +36,11 @@ MODEL = os.environ.get("STACKATLAS_MODEL", "sonnet")
 VALID_STATUS = {"healthy", "warning", "critical"}
 
 SYSTEM = """You are a senior data engineer writing a database catalog.
+Some columns include a `sampleValues` field: real distinct values observed
+in the live data (not a guess). When present, use it to document exactly
+what the codes mean (e.g. a status column sampled as ["c","p","r","x"] --
+state precisely which observed code means what, don't just call it "magic
+values" and hedge). When absent, don't invent values you don't have.
 For the given table, return STRICT JSON with keys:
   doc      - 2-3 sentence summary: what the table is for, how it's used,
              anything a new engineer or an AI agent MUST know (magic values,

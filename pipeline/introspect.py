@@ -29,8 +29,10 @@ import sys
 
 try:
     import psycopg2
+    from psycopg2 import sql as _sql
 except ImportError:  # pragma: no cover - deferred so the pure helpers stay importable
     psycopg2 = None
+    _sql = None
 
 TABLES_SQL = """
 SELECT c.relname AS table_name,
@@ -73,6 +75,38 @@ JOIN information_schema.key_column_usage kcu
   ON tc.constraint_name = kcu.constraint_name
 WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = 'public';
 """
+
+# Candidate types for magic-value sampling: low-cardinality text/boolean
+# columns (status codes, plan tiers, ...). information_schema.columns never
+# exposes actual row VALUES, only structure/default -- without this, docgen
+# only ever sees a column's DEFAULT (e.g. orders_v2.status='p') and has no
+# way to know what 'c' or 'x' mean, so it can only hedge ("presumably
+# pending") instead of documenting the real code -> meaning mapping an
+# agent needs to write a correct WHERE clause.
+_SAMPLEABLE_TYPES = {"text", "character varying", "character", "boolean"}
+SAMPLE_LIMIT = 8
+_MAX_ROWS_TO_SAMPLE = 200_000  # guard against scanning huge tables
+
+
+def sample_distinct_values(cur, table, column, dtype, approx_rows):
+    """Up to SAMPLE_LIMIT distinct non-null values for a likely-enum column,
+    or None if the type isn't sampleable, the table's too big, or the column
+    turns out to be high-cardinality (more than SAMPLE_LIMIT distinct
+    values seen -- not a meaningful enum, e.g. free-text or an id)."""
+    if dtype not in _SAMPLEABLE_TYPES or approx_rows > _MAX_ROWS_TO_SAMPLE:
+        return None
+    try:
+        cur.execute(
+            _sql.SQL("SELECT DISTINCT {col} FROM {tbl} WHERE {col} IS NOT NULL LIMIT %s")
+                .format(col=_sql.Identifier(column), tbl=_sql.Identifier(table)),
+            (SAMPLE_LIMIT + 1,),
+        )
+        values = [row[0] for row in cur.fetchall()]
+    except Exception:  # noqa: BLE001 - sampling is best-effort, never fail the pipeline over it
+        return None
+    if len(values) > SAMPLE_LIMIT:
+        return None
+    return sorted(str(v) for v in values)
 
 SOFT_FK_ALIASES = {
     "uid": "users", "user_id": "users", "ownerid": "users", "owner_id": "users",
@@ -126,19 +160,25 @@ def grid_layout(n, cols=4, x0=120, y0=90, dx=210, dy=150):
     return [{"x": x0 + (i % cols) * dx, "y": y0 + (i // cols) * dy} for i in range(n)]
 
 
-def build_catalog(table_rows, columns, fks, dbname, window_days, pk_columns=()):
+def build_catalog(table_rows, columns, fks, dbname, window_days, pk_columns=(), sample_values=None):
     table_names = {t[0] for t in table_rows}
     fk_pairs = {(f[0], f[2]) for f in fks}
     pk_set = set(pk_columns)
+    sample_values = sample_values or {}
     positions = grid_layout(len(table_rows))
 
     tables = []
     for idx, (name, approx_rows, read_ops, write_ops) in enumerate(table_rows):
-        cols = [
-            {"name": c[1], "type": c[2], "nullable": c[3] == "YES", "default": c[4],
-             "primaryKey": (name, c[1]) in pk_set}
-            for c in columns if c[0] == name
-        ]
+        cols = []
+        for c in columns:
+            if c[0] != name:
+                continue
+            col = {"name": c[1], "type": c[2], "nullable": c[3] == "YES", "default": c[4],
+                   "primaryKey": (name, c[1]) in pk_set}
+            values = sample_values.get((name, c[1]))
+            if values:
+                col["sampleValues"] = values
+            cols.append(col)
         tables.append({
             "name": name,
             "rows": int(approx_rows),
@@ -192,12 +232,19 @@ def main():
         cur.execute(COLUMNS_SQL); columns = cur.fetchall()
         cur.execute(FKS_SQL); fks = cur.fetchall()
         cur.execute(PK_SQL); pk_columns = cur.fetchall()
+
+        rows_by_table = {t[0]: t[1] for t in table_rows}
+        sample_values = {}
+        for table, col, dtype, *_rest in columns:
+            values = sample_distinct_values(cur, table, col, dtype, rows_by_table.get(table, 0))
+            if values:
+                sample_values[(table, col)] = values
     finally:
         conn.close()
 
     dbname = args.dsn.rsplit("/", 1)[-1]
     catalog = build_catalog(table_rows, columns, fks, dbname, args.stats_window_days,
-                             pk_columns=pk_columns)
+                             pk_columns=pk_columns, sample_values=sample_values)
     json.dump(catalog, sys.stdout, indent=2, default=str)
 
 

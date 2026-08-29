@@ -38,7 +38,7 @@ TAG_SET = set(TAGS)
 _RULES: list[tuple[str, re.Pattern]] = [
     ("broken_fk",          re.compile(r"\b(broken fk|points? (at|to) (a )?deprecated|targets? (a )?deprecated|fk (to|targets?) (a )?deprecated|enforced fk (to|targeting) .*deprecated|should be orders_v2|re-?point|wrong table)\b", re.I)),
     ("deprecated_table",   re.compile(r"\b(deprecated|legacy|superseded|replaced by)\b", re.I)),
-    ("empty_but_hot",      re.compile(r"\b(empty (despite|but)|empty .*read|worked around|silent(ly)? (stuff|workaround))\b|\b(0|zero) rows?\b.{0,80}\bnon-?zero reads?\b", re.I)),
+    ("empty_but_hot",      re.compile(r"\b(empty (despite|but)|empty .*read|worked around|silent(ly)? (stuff|workaround))\b|\b(0|zero) rows?\b.{0,80}\b([1-9]\d* reads?|non-?zero reads?)\b", re.I)),
     # Deliberately narrow: "orphaned" shows up constantly in ROW-level referential
     # phrasing ("orphaned references", "orphaned orders") that belongs to
     # missing_fk, not to this tag. Only the bare, un-suffixed word reliably means
@@ -46,15 +46,31 @@ _RULES: list[tuple[str, re.Pattern]] = [
     # or trying to regex out row-level phrasing produced far more false positives
     # than it fixed.
     ("orphan_table",       re.compile(r"\b(orphan|junk|abandoned|zero reads|no reads|left behind)\b", re.I)),
-    ("missing_fk",         re.compile(r"\b(missing fk|no fk|no enforced foreign keys?|not enforced|unenforced|logical fk|fk (dropped|removed))\b", re.I)),
+    # "unenforced"/"not enforced" alone are too generic (they fire on any
+    # unconstrained column, e.g. a nullable boolean with "undefined and
+    # unenforced by the schema" -- nothing to do with a foreign key) --
+    # require an fk/relationship/reference word within ~60 chars either side.
+    ("missing_fk",         re.compile(
+        r"\b(missing fk|no fk|no enforced foreign keys?|logical fk|fk (dropped|removed)|"
+        r"(fk|foreign key|relationship|reference)s?\b.{0,60}\b(not (db-)?enforced|unenforced|without (db-level |database )?enforcement)\b|"
+        r"(not (db-)?enforced|unenforced|without (db-level |database )?enforcement)\b.{0,60}\b(fk|foreign key|relationship|reference)s?)\b",
+        re.I)),
     ("no_primary_key",     re.compile(r"\bno primary key\b", re.I)),
-    ("no_unique_index",    re.compile(r"\b(no unique index|no unique constraint|not unique|duplicate accounts?|duplicate .*possible)\b", re.I)),
-    ("money_as_float",     re.compile(r"\b(float .*(money|currency|price)|money .*(float|real)|currency .*float|price .*float)\b", re.I)),
+    # "duplicate .*possible" is deliberately narrow (accounts/emails/signups/
+    # users, not bare "duplicate rows") -- a broader version matched generic
+    # missing-primary-key phrasing ("duplicate rows ... possible") that has
+    # nothing to do with a missing unique constraint on an identity column.
+    ("no_unique_index",    re.compile(r"\b(no unique index|no unique constraint|not unique|duplicate accounts?|duplicate (account|email|signup|user)s? .*possible)\b", re.I)),
+    # word-boundary-only gaps, not a literal space, between the money word and
+    # "float" -- real text quotes/parenthesizes column names ('price' stored
+    # as double precision (float)...), which a literal "price .*float" (one
+    # required space right after "price") doesn't match.
+    ("money_as_float",     re.compile(r"\bfloat\b.{0,40}\b(money|currency|price)\b|\b(money|currency|price)\b.{0,40}\bfloat\b", re.I)),
     ("status_vocab_drift", re.compile(r"\b(status vocab|another status|third status|different (status )?vocabular|inconsistent status)\b", re.I)),
     ("magic_values",       re.compile(r"\b(magic (status |value|code)|single[- ]char|undocumented .*status|status values? \()", re.I)),
     ("epoch_timestamp",    re.compile(r"\b(epoch|unix (epoch|seconds|time)|integer timestamp|timestamp .*integer)\b|\b(bigint|integer)\b.{0,30}\btimestamp", re.I)),
     ("naming_drift",       re.compile(r"\b(camelcase|naming drift|uid vs|named (differently|inconsistently)|inconsistent(ly)? (named|naming)|snake_case)\b", re.I)),
-    ("undocumented_jsonb", re.compile(r"\b(undocumented jsonb|jsonb shape|jsonb (blob|payload)|shape .*jsonb)\b", re.I)),
+    ("undocumented_jsonb", re.compile(r"\b(undocumented jsonb|jsonb shape|jsonb (blob|payload)|shape .*jsonb|unstructured jsonb|jsonb .*no schema)\b", re.I)),
     ("unbounded_growth",   re.compile(r"\b(retention|unbounded|grow(ing|s) (unbounded|forever)|no ttl)\b", re.I)),
     ("zero_writes",        re.compile(r"\b(zero writes|no writes in|0 writes)\b", re.I)),
 ]
