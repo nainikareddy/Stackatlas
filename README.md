@@ -16,6 +16,14 @@ Point it at a database. Get a living catalog — schema graph, AI-written docs, 
 
 ---
 
+## Built for the micro1 Agentic Workflows Hackathon
+
+Everything in this repo — pipeline, MCP server, dashboard, eval harness and
+RL environment — was written from an empty repo starting **August 25, 2026**,
+for this hackathon's submission window. Nothing here pre-existed it; the only
+non-code input carried in is prior domain experience (BI observability
+engineering at Datalogz, credited below).
+
 ## The problem
 
 Millions of vibe-coded apps shipped since 2024, and their schemas rot: dropped foreign keys, magic status codes, orphaned tables, three timestamp conventions in one database. Humans work around it quietly. **AI agents fail loudly** — an agent writing SQL against an undocumented schema hallucinates joins, sums the wrong column, and joins to a table that's been dead since last August.
