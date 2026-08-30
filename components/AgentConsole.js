@@ -45,7 +45,7 @@ export default function AgentConsole() {
     <div className="panel console">
       <div className="panel-hd">
         <span>Agent Context Query</span>
-        <span className="hint">what your AI agents see via MCP</span>
+        <span className="hint">scripted demo — the live agent demo is Claude + MCP, not this panel</span>
       </div>
       <div className="chips">
         {agentAnswers.map((item) => (

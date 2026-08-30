@@ -155,8 +155,15 @@ def mark_broken_edges(edges, tables_by_name):
     return edges
 
 
-def grid_layout(n, cols=4, x0=120, y0=90, dx=210, dy=150):
-    """Deterministic node positions so the graph renders without a layout engine."""
+def grid_layout(n, x0=100, y0=90, dx=210, dy=150, max_cols=6):
+    """Deterministic node positions so the graph renders without a layout
+    engine. Column count grows with n (capped at max_cols) to hold rows to
+    ~3 -- the dashboard's SVG viewBox is a fixed 1240x500, so a naive fixed
+    4-column grid overflows the bottom edge once a schema has more than
+    ~12 tables (490px+ node height on a 500px canvas). Schemas beyond
+    ~max_cols*3 tables will still overflow; a real layout engine (e.g.
+    force-directed) is the next step past this fix, not attempted here."""
+    cols = min(max_cols, max(4, -(-n // 3)))  # ceil(n/3), floored at 4 cols
     return [{"x": x0 + (i % cols) * dx, "y": y0 + (i // cols) * dy} for i in range(n)]
 
 

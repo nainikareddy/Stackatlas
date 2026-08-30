@@ -25,6 +25,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 # make the sibling evals package importable when run as a script
@@ -194,6 +195,7 @@ def main(path):
     catalog["healthScore"] = compute_health(catalog)
     catalog.setdefault("stats", {})["docCoverage"] = 1.0
     catalog["stats"]["columns"] = sum(len(t["columns"]) for t in catalog["tables"])
+    catalog["generatedAt"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     problems = verify(catalog)
     if problems:

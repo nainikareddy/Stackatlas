@@ -54,18 +54,25 @@ def search_tables(query: str) -> str:
 
 
 @mcp.tool()
-def get_table_context(table: str) -> str:
-    """Full context for one table: purpose, columns with docs, known issues,
-    traffic, and relationships. Call before writing queries against it."""
+def get_table_context(tables: list[str]) -> str:
+    """Full context for one or more tables: purpose, columns with docs,
+    known issues, traffic, and relationships. Pass every table you expect
+    to need for the query in ONE call (e.g. ["orders_v2", "workspaces"])
+    rather than calling this once per table -- it's the same data either
+    way, just fewer round trips. Call before writing queries against any
+    of them."""
     catalog = load()
-    t = find_table(catalog, table)
-    if not t:
-        names = [x["name"] for x in catalog["tables"]]
-        return json.dumps({"error": f"unknown table '{table}'",
-                           "available": names})
-    edges = [e for e in catalog["edges"]
-             if table.lower() in (e["from"].lower(), e["to"].lower())]
-    return json.dumps({**t, "relationships": edges}, indent=2)
+    names = [x["name"] for x in catalog["tables"]]
+    result = {}
+    for table in tables:
+        t = find_table(catalog, table)
+        if not t:
+            result[table] = {"error": f"unknown table '{table}'", "available": names}
+            continue
+        edges = [e for e in catalog["edges"]
+                 if table.lower() in (e["from"].lower(), e["to"].lower())]
+        result[table] = {**t, "relationships": edges}
+    return json.dumps(result, indent=2)
 
 
 @mcp.tool()
@@ -86,9 +93,11 @@ def explain_column(table: str, column: str) -> str:
 
 @mcp.tool()
 def list_broken_relationships() -> str:
-    """List foreign keys that point at deprecated or wrong tables — the silent
-    joins that make an agent write correct-looking SQL against dead data. Call
-    this before writing any query that joins tables."""
+    """List EVERY foreign key in the whole schema that points at a
+    deprecated or wrong table — the silent joins that make an agent write
+    correct-looking SQL against dead data. This is schema-wide, not
+    per-table: call it once, up front, before writing any query that joins
+    tables, rather than once per join you're considering."""
     catalog = load()
     broken = [
         {"from": e["from"], "to": e["to"],

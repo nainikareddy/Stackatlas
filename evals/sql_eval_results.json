@@ -1,20 +1,29 @@
 [
   {
     "arm": "baseline",
-    "response_text": "The schema has two overlapping, undocumented order tables (`orders` with a free-text `status` and `orders_v2` with an abbreviated `status` like `'p'`) plus a separate `payments.state` field and no currency column anywhere, so which table/status value constitutes \"completed revenue\" (and whether amounts are already in USD) cannot be determined reliably from the DDL alone.",
-    "sql": null,
+    "response_text": "The schema has no documented enum values, so I'm assuming refunds are recorded in `payments.state` as `'refunded'` (the only refund-related signal available); I can't verify this label without data.\n\n```sql\nSELECT\n    COALESCE(SUM(amount_cents), 0) / 100.0 AS total_refunded_usd\nFROM public.payments\nWHERE state = 'refunded';\n```",
+    "sql": "SELECT\n    COALESCE(SUM(amount_cents), 0) / 100.0 AS total_refunded_usd\nFROM public.payments\nWHERE state = 'refunded';",
     "claude_is_error": false,
-    "correct": false,
-    "why": "no SQL extracted from response",
-    "rows": null,
+    "correct": true,
+    "why": "matches gold",
+    "rows": [
+      [
+        "289.0000000000000000"
+      ]
+    ],
+    "gold_rows": [
+      [
+        "289.00"
+      ]
+    ],
     "error": null,
-    "id": 1,
-    "question": "What's our total completed revenue, in USD?"
+    "id": 2,
+    "question": "How much have we refunded in total, in USD?"
   },
   {
     "arm": "solution",
-    "response_text": "This query doesn't require a join, and no broken relationship affects it \u2014 `orders_v2` is the live source of truth for orders, `status = 'c'` means completed, and `amount_cents` is the only monetary field (no separate currency column exists, so it's treated as the app's single implicit currency, USD).\n\n```sql\nSELECT SUM(amount_cents) / 100.0 AS total_completed_revenue_usd\nFROM orders_v2\nWHERE status = 'c';\n```",
-    "sql": "SELECT SUM(amount_cents) / 100.0 AS total_completed_revenue_usd\nFROM orders_v2\nWHERE status = 'c';",
+    "response_text": "Now I have enough to write the query. The live source of truth is `orders_v2` (the legacy `orders` table is deprecated/stale with only 3 rows, and its `order_items` FK is broken). Revenue is `amount_cents` where `status = 'c'` (completed), converted from cents to USD.\n\n```sql\nSELECT\n    SUM(amount_cents) / 100.0 AS total_completed_revenue_usd\nFROM orders_v2\nWHERE status = 'c';\n```",
+    "sql": "SELECT\n    SUM(amount_cents) / 100.0 AS total_completed_revenue_usd\nFROM orders_v2\nWHERE status = 'c';",
     "claude_is_error": false,
     "correct": true,
     "why": "matches gold",
@@ -34,29 +43,29 @@
   },
   {
     "arm": "baseline",
-    "response_text": "The schema has no explicit refund flag or enum \u2014 `payments.state` is a free-text column with no documented values, so identifying refunds requires assuming the state string used (I'm assuming `'refunded'`); if that's wrong, this total will be inaccurate.\n\n```sql\nSELECT\n    COALESCE(SUM(amount_cents), 0) / 100.0 AS total_refunded_usd\nFROM public.payments\nWHERE lower(state) = 'refunded';\n```",
-    "sql": "SELECT\n    COALESCE(SUM(amount_cents), 0) / 100.0 AS total_refunded_usd\nFROM public.payments\nWHERE lower(state) = 'refunded';",
+    "response_text": "The schema doesn't define any enum/check constraint for `status` values (and `orders_v2.status` even defaults to a cryptic single-letter code `'p'`), so which literal string represents \"completed\" can't be verified from the DDL alone \u2014 I'm assuming the literal `'completed'` is used consistently across `orders` and `orders_v2`, which may not hold.\n\n```sql\nSELECT\n    COALESCE(SUM(revenue_usd), 0) AS total_completed_revenue_usd\nFROM (\n    -- Legacy orders table: total already in USD (numeric)\n    SELECT o.total AS revenue_usd\n    FROM public.orders o\n    WHERE o.status = 'completed'\n\n    UNION ALL\n\n    -- Newer orders_v2 table: amount stored in cents\n    SELECT (ov2.amount_cents::numeric / 100) AS revenue_usd\n    FROM public.orders_v2 ov2\n    WHERE ov2.status = 'completed'\n) AS completed_orders;\n```",
+    "sql": "SELECT\n    COALESCE(SUM(revenue_usd), 0) AS total_completed_revenue_usd\nFROM (\n    -- Legacy orders table: total already in USD (numeric)\n    SELECT o.total AS revenue_usd\n    FROM public.orders o\n    WHERE o.status = 'completed'\n\n    UNION ALL\n\n    -- Newer orders_v2 table: amount stored in cents\n    SELECT (ov2.amount_cents::numeric / 100) AS revenue_usd\n    FROM public.orders_v2 ov2\n    WHERE ov2.status = 'completed'\n) AS completed_orders;",
     "claude_is_error": false,
-    "correct": true,
-    "why": "matches gold",
+    "correct": false,
+    "why": "result set differs from gold",
     "rows": [
       [
-        "289.0000000000000000"
+        "364.00"
       ]
     ],
     "gold_rows": [
       [
-        "289.00"
+        "846.00"
       ]
     ],
     "error": null,
-    "id": 2,
-    "question": "How much have we refunded in total, in USD?"
+    "id": 1,
+    "question": "What's our total completed revenue, in USD?"
   },
   {
-    "arm": "solution",
-    "response_text": "```sql\nSELECT SUM(amount_cents) / 100.0 AS total_refunded_usd\nFROM payments\nWHERE state = 'refunded';\n```\n\nNote: the `payments` table has no `currency` column, so this total assumes all amounts are in USD (an implicit assumption per the table's known issues, not a verified fact).",
-    "sql": "SELECT SUM(amount_cents) / 100.0 AS total_refunded_usd\nFROM payments\nWHERE state = 'refunded';",
+    "arm": "db_access",
+    "response_text": "We've refunded a total of **$289.00 USD** across 3 refunded payments (payments.state = 'refunded').\n\n```sql\nSELECT sum(amount_cents) / 100.0 AS total_refunded_usd\nFROM payments\nWHERE state = 'refunded';\n```",
+    "sql": "SELECT sum(amount_cents) / 100.0 AS total_refunded_usd\nFROM payments\nWHERE state = 'refunded';",
     "claude_is_error": false,
     "correct": true,
     "why": "matches gold",
@@ -76,8 +85,8 @@
   },
   {
     "arm": "baseline",
-    "response_text": "The schema has multiple ambiguous signals for \"paying\" (order status codes in `orders`/`orders_v2`/`payments` use unexplained short codes like `'p'`, and there are two parallel order systems), so I'm using the most directly interpretable field \u2014 `users.plan`, where non-'free' indicates a paid subscription \u2014 as the best-supported proxy for paying customers.\n\n```sql\nSELECT COUNT(DISTINCT id) AS paying_customers\nFROM public.users\nWHERE plan IS NOT NULL\n  AND plan <> 'free';\n```",
-    "sql": "SELECT COUNT(DISTINCT id) AS paying_customers\nFROM public.users\nWHERE plan IS NOT NULL\n  AND plan <> 'free';",
+    "response_text": "The schema doesn't document the valid values for `orders.status`, `payments.state`, or `orders_v2.status` (no CHECK constraints or comments), so \"paying\" can't be reliably inferred from those fields alone; the only unambiguous signal of paid status in the schema is `users.plan`, which defaults to `'free'` implying other values represent paid tiers.\n\n```sql\nSELECT COUNT(*) AS paying_customers\nFROM public.users\nWHERE plan IS NOT NULL\n  AND plan <> 'free';\n```",
+    "sql": "SELECT COUNT(*) AS paying_customers\nFROM public.users\nWHERE plan IS NOT NULL\n  AND plan <> 'free';",
     "claude_is_error": false,
     "correct": true,
     "why": "matches gold",
@@ -97,24 +106,24 @@
   },
   {
     "arm": "solution",
-    "response_text": "The simplest, most reliable definition of \"paying customers\" here is users on a non-free plan, which lines up closely with those who have a Stripe customer ID (4 of 7 users). The `payments`/`orders_v2` path would require joining through an unenforced FK (`payments.order_id \u2192 orders_v2`, not even users), so it can't reliably be tied back to individual customers \u2014 I'll use the `users` table directly instead.\n\n```sql\nSELECT COUNT(*) AS paying_customers\nFROM users\nWHERE plan IN ('pro', 'team')\n   OR stripe_customer_id IS NOT NULL;\n```",
-    "sql": "SELECT COUNT(*) AS paying_customers\nFROM users\nWHERE plan IN ('pro', 'team')\n   OR stripe_customer_id IS NOT NULL;",
+    "response_text": "The `payments` table has no currency column \u2014 amounts are stored in cents under an implicit single-currency assumption (per the schema docs), so I'll treat that as USD. Refund total comes from `payments.state = 'refunded'`.\n\n```sql\nSELECT SUM(amount_cents) / 100.0 AS total_refunded_usd\nFROM payments\nWHERE state = 'refunded';\n```",
+    "sql": "SELECT SUM(amount_cents) / 100.0 AS total_refunded_usd\nFROM payments\nWHERE state = 'refunded';",
     "claude_is_error": false,
     "correct": true,
     "why": "matches gold",
     "rows": [
       [
-        4
+        "289.0000000000000000"
       ]
     ],
     "gold_rows": [
       [
-        4
+        "289.00"
       ]
     ],
     "error": null,
-    "id": 3,
-    "question": "How many paying customers do we have?"
+    "id": 2,
+    "question": "How much have we refunded in total, in USD?"
   },
   {
     "arm": "baseline",
@@ -139,7 +148,49 @@
   },
   {
     "arm": "solution",
-    "response_text": "This query doesn't require joining `order_items` (which is empty/broken anyway) \u2014 just counting rows in `products` where `active` is true.\n\n```sql\nSELECT COUNT(*) AS active_products\nFROM products\nWHERE active = true;\n```",
+    "response_text": "```sql\nSELECT COUNT(DISTINCT id) AS paying_customers\nFROM users\nWHERE plan IN ('pro', 'team')\n   OR stripe_customer_id IS NOT NULL;\n```",
+    "sql": "SELECT COUNT(DISTINCT id) AS paying_customers\nFROM users\nWHERE plan IN ('pro', 'team')\n   OR stripe_customer_id IS NOT NULL;",
+    "claude_is_error": false,
+    "correct": true,
+    "why": "matches gold",
+    "rows": [
+      [
+        4
+      ]
+    ],
+    "gold_rows": [
+      [
+        4
+      ]
+    ],
+    "error": null,
+    "id": 3,
+    "question": "How many paying customers do we have?"
+  },
+  {
+    "arm": "db_access",
+    "response_text": "We currently sell **3 active products** (out of 4 total in the `products` table; 1 is marked inactive). The older `product_catalog_old` table appears to be a deprecated/legacy table without an active flag, so it was excluded.\n\n```sql\nSELECT count(*) AS active_products\nFROM products\nWHERE active = true;\n```",
+    "sql": "SELECT count(*) AS active_products\nFROM products\nWHERE active = true;",
+    "claude_is_error": false,
+    "correct": true,
+    "why": "matches gold",
+    "rows": [
+      [
+        3
+      ]
+    ],
+    "gold_rows": [
+      [
+        3
+      ]
+    ],
+    "error": null,
+    "id": 4,
+    "question": "How many active products do we sell?"
+  },
+  {
+    "arm": "solution",
+    "response_text": "```sql\nSELECT COUNT(*) AS active_products\nFROM products\nWHERE active = true;\n```",
     "sql": "SELECT COUNT(*) AS active_products\nFROM products\nWHERE active = true;",
     "claude_is_error": false,
     "correct": true,
@@ -159,9 +210,30 @@
     "question": "How many active products do we sell?"
   },
   {
+    "arm": "db_access",
+    "response_text": "Exploration summary: there are two parallel order systems \u2014 a small legacy `orders` table (3 rows, all `status='completed'`, empty `order_items`, no linked payments) and the active `orders_v2` + `payments` system (17 orders_v2 rows with status codes `c`=completed/`r`=refunded/`x`=cancelled/`p`=pending, backed by real `payments` records with `state`='succeeded'/'refunded'). The `orders_v2` completed total (84600 cents) exactly matches the `payments` succeeded total (84600 cents), confirming `payments` is the authoritative, Stripe-backed revenue ledger. The legacy `orders` table appears to be unused leftover data (no matching payments, empty order_items) and is excluded.\n\n```sql\nSELECT SUM(amount_cents) / 100.0 AS total_completed_revenue_usd\nFROM payments\nWHERE state = 'succeeded';\n```",
+    "sql": "SELECT SUM(amount_cents) / 100.0 AS total_completed_revenue_usd\nFROM payments\nWHERE state = 'succeeded';",
+    "claude_is_error": false,
+    "correct": true,
+    "why": "matches gold",
+    "rows": [
+      [
+        "846.0000000000000000"
+      ]
+    ],
+    "gold_rows": [
+      [
+        "846.00"
+      ]
+    ],
+    "error": null,
+    "id": 1,
+    "question": "What's our total completed revenue, in USD?"
+  },
+  {
     "arm": "baseline",
-    "response_text": "The schema has no documented status enum values, so I'm assuming `status = 'completed'` marks completed orders in `orders_v2` (the only orders table with a `workspace_id`); the legacy `orders` table has no workspace link and thus can't be included in this breakdown.\n\n```sql\nSELECT\n    w.id                                   AS workspace_id,\n    w.name                                 AS workspace_name,\n    COUNT(o.id)                            AS completed_order_count,\n    SUM(o.amount_cents)                    AS completed_revenue_cents,\n    ROUND(SUM(o.amount_cents) / 100.0, 2)  AS completed_revenue_dollars\nFROM public.orders_v2 o\nJOIN public.workspaces w\n    ON w.id = o.workspace_id\nWHERE o.status = 'completed'\nGROUP BY w.id, w.name\nORDER BY completed_revenue_cents DESC;\n```",
-    "sql": "SELECT\n    w.id                                   AS workspace_id,\n    w.name                                 AS workspace_name,\n    COUNT(o.id)                            AS completed_order_count,\n    SUM(o.amount_cents)                    AS completed_revenue_cents,\n    ROUND(SUM(o.amount_cents) / 100.0, 2)  AS completed_revenue_dollars\nFROM public.orders_v2 o\nJOIN public.workspaces w\n    ON w.id = o.workspace_id\nWHERE o.status = 'completed'\nGROUP BY w.id, w.name\nORDER BY completed_revenue_cents DESC;",
+    "response_text": "Note: only `orders_v2` has a `workspace_id` column, but the schema never documents the actual set of `status` values (default is `'p'`), so I'm assuming `'completed'` is the value representing completed orders \u2014 verify this against your actual status codes.\n\n```sql\nSELECT\n    workspace_id,\n    SUM(amount_cents) / 100.0 AS completed_revenue_usd\nFROM public.orders_v2\nWHERE status = 'completed'\nGROUP BY workspace_id\nORDER BY completed_revenue_usd DESC;\n```",
+    "sql": "SELECT\n    workspace_id,\n    SUM(amount_cents) / 100.0 AS completed_revenue_usd\nFROM public.orders_v2\nWHERE status = 'completed'\nGROUP BY workspace_id\nORDER BY completed_revenue_usd DESC;",
     "claude_is_error": false,
     "correct": false,
     "why": "result set differs from gold",
@@ -182,32 +254,36 @@
     ],
     "error": null,
     "id": 5,
-    "question": "Break down completed revenue by workspace."
+    "question": "Break down completed revenue by workspace, in USD, grouped by workspace_id."
+  },
+  {
+    "arm": "baseline",
+    "response_text": "```sql\nSELECT\n    p.title AS product,\n    oi.qty AS quantity,\n    oi.unit_price_cents AS unit_price_cents,\n    (oi.qty * oi.unit_price_cents) AS line_total_cents\nFROM public.order_items oi\nLEFT JOIN public.products p ON p.id = oi.product_id\nWHERE oi.order_id = 5;\n```\n\nNote: This assumes order id 5 refers to the legacy `orders`/`order_items` tables (which are linked via a foreign key), not `orders_v2`, since `orders_v2` has no corresponding line-items table in this schema.",
+    "sql": "SELECT\n    p.title AS product,\n    oi.qty AS quantity,\n    oi.unit_price_cents AS unit_price_cents,\n    (oi.qty * oi.unit_price_cents) AS line_total_cents\nFROM public.order_items oi\nLEFT JOIN public.products p ON p.id = oi.product_id\nWHERE oi.order_id = 5;",
+    "claude_is_error": false,
+    "correct": true,
+    "why": "surfaced the issue (matched phrase: 'legacy')",
+    "id": 6,
+    "question": "List the line items (product, quantity, price) for order id 5."
   },
   {
     "arm": "solution",
-    "response_text": "Both `orders_v2.workspace_id \u2192 workspaces.id` relationships are app-level only (unenforced), but they aren't in the broken-relationships list, so I'll proceed with a LEFT JOIN to surface any orphaned workspace_id values rather than silently dropping them.\n\n```sql\nSELECT\n    w.id            AS workspace_id,\n    w.name          AS workspace_name,\n    COUNT(o.id)     AS completed_order_count,\n    SUM(o.amount_cents) / 100.0 AS completed_revenue_dollars\nFROM orders_v2 o\nLEFT JOIN workspaces w\n    ON w.id = o.workspace_id\nWHERE o.status = 'c'  -- 'c' = completed, per orders_v2.status code mapping\nGROUP BY w.id, w.name\nORDER BY completed_revenue_dollars DESC NULLS LAST;\n```",
-    "sql": "SELECT\n    w.id            AS workspace_id,\n    w.name          AS workspace_name,\n    COUNT(o.id)     AS completed_order_count,\n    SUM(o.amount_cents) / 100.0 AS completed_revenue_dollars\nFROM orders_v2 o\nLEFT JOIN workspaces w\n    ON w.id = o.workspace_id\nWHERE o.status = 'c'  -- 'c' = completed, per orders_v2.status code mapping\nGROUP BY w.id, w.name\nORDER BY completed_revenue_dollars DESC NULLS LAST;",
+    "response_text": "```sql\nSELECT\n    workspace_id,\n    SUM(amount_cents) / 100.0 AS completed_revenue_usd\nFROM orders_v2\nWHERE status = 'c'  -- 'c' = completed, per orders_v2.status documentation\nGROUP BY workspace_id\nORDER BY completed_revenue_usd DESC;\n```",
+    "sql": "SELECT\n    workspace_id,\n    SUM(amount_cents) / 100.0 AS completed_revenue_usd\nFROM orders_v2\nWHERE status = 'c'  -- 'c' = completed, per orders_v2.status documentation\nGROUP BY workspace_id\nORDER BY completed_revenue_usd DESC;",
     "claude_is_error": false,
     "correct": true,
     "why": "matches gold",
     "rows": [
       [
         1,
-        "Drift Labs",
-        6,
         "607.0000000000000000"
       ],
       [
         3,
-        "Northwind",
-        1,
         "190.0000000000000000"
       ],
       [
         2,
-        "Lee Sandbox",
-        1,
         "49.0000000000000000"
       ]
     ],
@@ -227,21 +303,32 @@
     ],
     "error": null,
     "id": 5,
-    "question": "Break down completed revenue by workspace."
+    "question": "Break down completed revenue by workspace, in USD, grouped by workspace_id."
   },
   {
-    "arm": "baseline",
-    "response_text": "```sql\nSELECT\n    p.id AS product_id,\n    p.title AS product_name,\n    p.sku,\n    oi.qty AS quantity,\n    oi.unit_price_cents,\n    (oi.qty * oi.unit_price_cents) AS line_total_cents\nFROM public.order_items oi\nLEFT JOIN public.products p ON p.id = oi.product_id\nWHERE oi.order_id = 5\nORDER BY oi.id;\n```",
-    "sql": "SELECT\n    p.id AS product_id,\n    p.title AS product_name,\n    p.sku,\n    oi.qty AS quantity,\n    oi.unit_price_cents,\n    (oi.qty * oi.unit_price_cents) AS line_total_cents\nFROM public.order_items oi\nLEFT JOIN public.products p ON p.id = oi.product_id\nWHERE oi.order_id = 5\nORDER BY oi.id;",
+    "arm": "db_access",
+    "response_text": "I explored the schema and found two competing \"orders\" tables (`orders` \u2014 a small, mostly-stale legacy table with only 3 rows \u2014 and `orders_v2`, which is what `payments.order_id` actually references for 11 of 11 payments). Order status codes in `orders_v2` (`c`, `r`, `x`, `p`) map cleanly to `payments.state` (`succeeded`, `refunded`, none, none respectively) once cross-checked.\n\nI defined a \"paying customer\" as a user with at least one **succeeded** payment (excluding refunded and pending/cancelled orders). Note this doesn't perfectly match `users.plan`: one user on the `free` plan has a succeeded one-off payment (counted), and one user with a `team` plan has only a refunded payment on record (still counted since they also have a succeeded one) \u2014 so the plan field alone isn't a reliable proxy for \"paying.\"\n\n**Answer: 5 paying customers** (out of 7 total users).\n\n```sql\nSELECT count(DISTINCT o.user_id) AS paying_customers\nFROM payments p\nJOIN orders_v2 o ON p.order_id = o.id\nWHERE p.state = 'succeeded';\n```",
+    "sql": "SELECT count(DISTINCT o.user_id) AS paying_customers\nFROM payments p\nJOIN orders_v2 o ON p.order_id = o.id\nWHERE p.state = 'succeeded';",
     "claude_is_error": false,
     "correct": false,
-    "why": "produced a query against order_items with no caveat in the response",
-    "id": 6,
-    "question": "List the line items (product, quantity, price) for order id 5."
+    "why": "result set differs from gold",
+    "rows": [
+      [
+        5
+      ]
+    ],
+    "gold_rows": [
+      [
+        4
+      ]
+    ],
+    "error": null,
+    "id": 3,
+    "question": "How many paying customers do we have?"
   },
   {
     "arm": "solution",
-    "response_text": "The `order_items` table, which would hold line items (product, quantity, price) for an order, currently has **0 rows** and receives no writes \u2014 it appears unused/superseded. Additionally, its `order_id` foreign key points to the deprecated `orders` table rather than the live `orders_v2` table, so the relationship is broken/unenforced anyway. There's no reliable way to fetch line items for order id 5 \u2014 the data doesn't exist and the join path is broken.",
+    "response_text": "The `order_items` table, which would hold line items (product, quantity, price) for an order, currently has **zero rows** \u2014 and its `order_id` foreign key is also broken, pointing to the deprecated `orders` table instead of the live `orders_v2` table. There's no reliable way to answer this: even if the FK were fixed, there's no data to return for order id 5.",
     "sql": null,
     "claude_is_error": false,
     "correct": true,
@@ -250,29 +337,65 @@
     "question": "List the line items (product, quantity, price) for order id 5."
   },
   {
-    "arm": "baseline",
-    "response_text": "The schema doesn't document the actual set of values used in `status` (and there are two separate order tables, `orders` and `orders_v2`, with no enum/check constraint defining \"cancelled\"), so this count is a best-effort guess based on matching text patterns rather than a guaranteed accurate figure.\n\n```sql\nSELECT\n    (SELECT COUNT(*) FROM public.orders WHERE status ILIKE '%cancel%')\n    +\n    (SELECT COUNT(*) FROM public.orders_v2 WHERE status ILIKE '%cancel%' OR status = 'c')\n    AS cancelled_orders_count;\n```",
-    "sql": "SELECT\n    (SELECT COUNT(*) FROM public.orders WHERE status ILIKE '%cancel%')\n    +\n    (SELECT COUNT(*) FROM public.orders_v2 WHERE status ILIKE '%cancel%' OR status = 'c')\n    AS cancelled_orders_count;",
+    "arm": "db_access",
+    "response_text": "There is no order with id 5 \u2014 the `orders` table only contains ids 1 through 3 (3 rows total). So this can't be answered as asked; I'd need a valid order id (1, 2, or 3) to list its line items.",
+    "sql": null,
     "claude_is_error": false,
     "correct": false,
-    "why": "result set differs from gold",
+    "why": "no SQL and no acknowledgement of the broken relationship",
+    "id": 6,
+    "question": "List the line items (product, quantity, price) for order id 5."
+  },
+  {
+    "arm": "baseline",
+    "response_text": "```sql\nSELECT\n    created_at::date AS signup_date,\n    COUNT(*) AS new_users\nFROM public.users\nGROUP BY created_at::date\nORDER BY signup_date;\n```",
+    "sql": "SELECT\n    created_at::date AS signup_date,\n    COUNT(*) AS new_users\nFROM public.users\nGROUP BY created_at::date\nORDER BY signup_date;",
+    "claude_is_error": false,
+    "correct": true,
+    "why": "matches gold",
     "rows": [
       [
-        8
+        "2026-08-20",
+        2
+      ],
+      [
+        "2026-08-22",
+        2
+      ],
+      [
+        "2026-08-25",
+        2
+      ],
+      [
+        "2026-08-27",
+        1
       ]
     ],
     "gold_rows": [
       [
-        3
+        "2026-08-20",
+        2
+      ],
+      [
+        "2026-08-22",
+        2
+      ],
+      [
+        "2026-08-25",
+        2
+      ],
+      [
+        "2026-08-27",
+        1
       ]
     ],
     "error": null,
-    "id": 7,
-    "question": "How many cancelled orders do we have?"
+    "id": 8,
+    "question": "How many users signed up per day?"
   },
   {
     "arm": "solution",
-    "response_text": "```sql\nSELECT COUNT(*) AS cancelled_orders\nFROM orders_v2\nWHERE status = 'x';\n```\n\nNote: `orders_v2.status` is an unconstrained single-letter code; `'x'` is the observed value for canceled/void orders based on sampled data, but there's no DB-level guarantee this mapping is exhaustive or stable.",
+    "response_text": "```sql\nSELECT COUNT(*) AS cancelled_orders\nFROM orders_v2\nWHERE status = 'x';\n```\n\nNote: `orders_v2` is the current source of truth for orders (the legacy `orders` table is deprecated with only 3 stale rows). Status is an unconstrained single-letter code where `'x'` denotes canceled/void, per sampled data \u2014 there's no enum/check constraint enforcing this, so it relies on tribal knowledge documented in the table's metadata.",
     "sql": "SELECT COUNT(*) AS cancelled_orders\nFROM orders_v2\nWHERE status = 'x';",
     "claude_is_error": false,
     "correct": true,
@@ -293,101 +416,67 @@
   },
   {
     "arm": "baseline",
-    "response_text": "```sql\nSELECT\n    created_at::date AS signup_date,\n    COUNT(*) AS user_count\nFROM public.users\nGROUP BY created_at::date\nORDER BY signup_date;\n```",
-    "sql": "SELECT\n    created_at::date AS signup_date,\n    COUNT(*) AS user_count\nFROM public.users\nGROUP BY created_at::date\nORDER BY signup_date;",
+    "response_text": "The schema has two orders tables (`orders` and `orders_v2`) with free-text `status` columns and no lookup/enum table defining valid values, so I can't be 100% certain what string represents \"cancelled\" in each (especially `orders_v2`, which defaults to the cryptic code `'p'`). Assuming `orders.status` stores the literal value `'cancelled'`, here's the query:\n\n```sql\nSELECT COUNT(*) AS cancelled_orders\nFROM public.orders\nWHERE status = 'cancelled';\n```",
+    "sql": "SELECT COUNT(*) AS cancelled_orders\nFROM public.orders\nWHERE status = 'cancelled';",
     "claude_is_error": false,
-    "correct": true,
-    "why": "matches gold",
+    "correct": false,
+    "why": "result set differs from gold",
     "rows": [
       [
-        "2026-08-20",
-        2
-      ],
-      [
-        "2026-08-22",
-        2
-      ],
-      [
-        "2026-08-25",
-        2
-      ],
-      [
-        "2026-08-27",
-        1
+        0
       ]
     ],
     "gold_rows": [
       [
-        "2026-08-20",
-        2
-      ],
-      [
-        "2026-08-22",
-        2
-      ],
-      [
-        "2026-08-25",
-        2
-      ],
-      [
-        "2026-08-27",
-        1
+        3
       ]
     ],
     "error": null,
-    "id": 8,
-    "question": "How many users signed up per day?"
+    "id": 7,
+    "question": "How many cancelled orders do we have?"
   },
   {
-    "arm": "solution",
-    "response_text": "This query needs just the `users` table (no joins), so no broken-relationship check is needed here. `created_at` is nullable but has a `now()` default \u2014 I'll group by date and note NULLs separately if any exist.\n\n```sql\nSELECT\n    created_at::date AS signup_date,\n    COUNT(*) AS user_count\nFROM users\nGROUP BY created_at::date\nORDER BY signup_date;\n```",
-    "sql": "SELECT\n    created_at::date AS signup_date,\n    COUNT(*) AS user_count\nFROM users\nGROUP BY created_at::date\nORDER BY signup_date;",
+    "arm": "db_access",
+    "response_text": "No currency field \u2014 amounts are in cents, USD. Status `c` = completed. Final query:\n\n```sql\nSELECT\n    workspace_id,\n    SUM(amount_cents) / 100.0 AS completed_revenue_usd\nFROM orders_v2\nWHERE status = 'c'\nGROUP BY workspace_id\nORDER BY workspace_id;\n```",
+    "sql": "SELECT\n    workspace_id,\n    SUM(amount_cents) / 100.0 AS completed_revenue_usd\nFROM orders_v2\nWHERE status = 'c'\nGROUP BY workspace_id\nORDER BY workspace_id;",
     "claude_is_error": false,
     "correct": true,
     "why": "matches gold",
     "rows": [
       [
-        "2026-08-20",
-        2
+        1,
+        "607.0000000000000000"
       ],
       [
-        "2026-08-22",
-        2
+        2,
+        "49.0000000000000000"
       ],
       [
-        "2026-08-25",
-        2
-      ],
-      [
-        "2026-08-27",
-        1
+        3,
+        "190.0000000000000000"
       ]
     ],
     "gold_rows": [
       [
-        "2026-08-20",
-        2
+        1,
+        "607.00"
       ],
       [
-        "2026-08-22",
-        2
+        2,
+        "49.00"
       ],
       [
-        "2026-08-25",
-        2
-      ],
-      [
-        "2026-08-27",
-        1
+        3,
+        "190.00"
       ]
     ],
     "error": null,
-    "id": 8,
-    "question": "How many users signed up per day?"
+    "id": 5,
+    "question": "Break down completed revenue by workspace, in USD, grouped by workspace_id."
   },
   {
     "arm": "baseline",
-    "response_text": "This schema has no declared foreign key linking `analytics_events.uid` to `users.id`, but `uid` appears to be the user reference based on naming convention \u2014 I'll assume that mapping.\n\n```sql\nSELECT\n    u.id AS user_id,\n    u.email,\n    COUNT(ae.id) AS event_count\nFROM public.users u\nLEFT JOIN public.analytics_events ae\n    ON ae.uid = u.id\nGROUP BY u.id, u.email\nORDER BY event_count DESC, u.id;\n```",
+    "response_text": "The schema has no FK linking `analytics_events.uid` to `users.id`, but `uid` is clearly intended to reference `users.id` based on naming; I'll assume that relationship.\n\n```sql\nSELECT\n    u.id AS user_id,\n    u.email,\n    COUNT(ae.id) AS event_count\nFROM public.users u\nLEFT JOIN public.analytics_events ae\n    ON ae.uid = u.id\nGROUP BY u.id, u.email\nORDER BY event_count DESC, u.id;\n```",
     "sql": "SELECT\n    u.id AS user_id,\n    u.email,\n    COUNT(ae.id) AS event_count\nFROM public.users u\nLEFT JOIN public.analytics_events ae\n    ON ae.uid = u.id\nGROUP BY u.id, u.email\nORDER BY event_count DESC, u.id;",
     "claude_is_error": false,
     "correct": true,
@@ -465,44 +554,196 @@
   },
   {
     "arm": "solution",
-    "response_text": "The relationship (analytics_events.uid \u2192 users.id) is not broken/deprecated, just unenforced at the DB level \u2014 that's fine for a LEFT JOIN. I'll use a LEFT JOIN from users to analytics_events so all users appear even with zero events, and handle NULL uid separately.\n\n```sql\nSELECT\n    u.id AS user_id,\n    u.email,\n    COUNT(ae.id) AS analytics_event_count\nFROM users u\nLEFT JOIN analytics_events ae\n    ON ae.uid = u.id\nGROUP BY u.id, u.email\nORDER BY analytics_event_count DESC, u.id;\n```",
-    "sql": "SELECT\n    u.id AS user_id,\n    u.email,\n    COUNT(ae.id) AS analytics_event_count\nFROM users u\nLEFT JOIN analytics_events ae\n    ON ae.uid = u.id\nGROUP BY u.id, u.email\nORDER BY analytics_event_count DESC, u.id;",
+    "response_text": "`created_at` is nullable, so I'll exclude null values (rows without a recorded signup timestamp) explicitly rather than silently miscounting them.\n\n```sql\nSELECT\n    DATE(created_at) AS signup_date,\n    COUNT(*) AS signups\nFROM users\nWHERE created_at IS NOT NULL\nGROUP BY DATE(created_at)\nORDER BY signup_date;\n```",
+    "sql": "SELECT\n    DATE(created_at) AS signup_date,\n    COUNT(*) AS signups\nFROM users\nWHERE created_at IS NOT NULL\nGROUP BY DATE(created_at)\nORDER BY signup_date;",
+    "claude_is_error": false,
+    "correct": true,
+    "why": "matches gold",
+    "rows": [
+      [
+        "2026-08-20",
+        2
+      ],
+      [
+        "2026-08-22",
+        2
+      ],
+      [
+        "2026-08-25",
+        2
+      ],
+      [
+        "2026-08-27",
+        1
+      ]
+    ],
+    "gold_rows": [
+      [
+        "2026-08-20",
+        2
+      ],
+      [
+        "2026-08-22",
+        2
+      ],
+      [
+        "2026-08-25",
+        2
+      ],
+      [
+        "2026-08-27",
+        1
+      ]
+    ],
+    "error": null,
+    "id": 8,
+    "question": "How many users signed up per day?"
+  },
+  {
+    "arm": "db_access",
+    "response_text": "Users signed up on only 4 distinct days (7 total users in the table):\n\n| Signup Date | New Users |\n|---|---|\n| 2026-08-20 | 2 |\n| 2026-08-22 | 2 |\n| 2026-08-25 | 2 |\n| 2026-08-27 | 1 |\n\n```sql\nSELECT created_at::date AS signup_date, COUNT(*) AS new_users\nFROM users\nGROUP BY signup_date\nORDER BY signup_date\n```",
+    "sql": "SELECT created_at::date AS signup_date, COUNT(*) AS new_users\nFROM users\nGROUP BY signup_date\nORDER BY signup_date",
+    "claude_is_error": false,
+    "correct": true,
+    "why": "matches gold",
+    "rows": [
+      [
+        "2026-08-20",
+        2
+      ],
+      [
+        "2026-08-22",
+        2
+      ],
+      [
+        "2026-08-25",
+        2
+      ],
+      [
+        "2026-08-27",
+        1
+      ]
+    ],
+    "gold_rows": [
+      [
+        "2026-08-20",
+        2
+      ],
+      [
+        "2026-08-22",
+        2
+      ],
+      [
+        "2026-08-25",
+        2
+      ],
+      [
+        "2026-08-27",
+        1
+      ]
+    ],
+    "error": null,
+    "id": 8,
+    "question": "How many users signed up per day?"
+  },
+  {
+    "arm": "baseline",
+    "response_text": "```sql\nSELECT\n    w.id AS workspace_id,\n    w.name AS workspace_name,\n    u.id AS owner_id,\n    u.name AS owner_name,\n    u.email AS owner_email\nFROM public.workspaces w\nLEFT JOIN public.users u ON u.id = w.\"ownerId\"\nORDER BY w.id;\n```",
+    "sql": "SELECT\n    w.id AS workspace_id,\n    w.name AS workspace_name,\n    u.id AS owner_id,\n    u.name AS owner_name,\n    u.email AS owner_email\nFROM public.workspaces w\nLEFT JOIN public.users u ON u.id = w.\"ownerId\"\nORDER BY w.id;",
     "claude_is_error": false,
     "correct": true,
     "why": "matches gold",
     "rows": [
       [
         1,
+        "Drift Labs",
+        1,
+        "Maya Chen",
+        "maya@driftlabs.io"
+      ],
+      [
+        2,
+        "Lee Sandbox",
+        3,
+        "Lee Park",
+        "lee@solofounder.dev"
+      ],
+      [
+        3,
+        "Northwind",
+        5,
+        "Kai Fischer",
+        "kai@northwind.io"
+      ]
+    ],
+    "gold_rows": [
+      [
+        1,
+        "Drift Labs",
+        "Maya Chen"
+      ],
+      [
+        2,
+        "Lee Sandbox",
+        "Lee Park"
+      ],
+      [
+        3,
+        "Northwind",
+        "Kai Fischer"
+      ]
+    ],
+    "error": null,
+    "id": 10,
+    "question": "For each workspace, who is the owner?"
+  },
+  {
+    "arm": "db_access",
+    "response_text": "Small dataset (8 events, 7 users). Here's the query:\n\n```sql\nSELECT\n    u.id AS user_id,\n    u.name,\n    u.email,\n    COUNT(ae.id) AS event_count\nFROM users u\nLEFT JOIN analytics_events ae ON ae.uid = u.id\nGROUP BY u.id, u.name, u.email\nORDER BY event_count DESC, u.id;\n```",
+    "sql": "SELECT\n    u.id AS user_id,\n    u.name,\n    u.email,\n    COUNT(ae.id) AS event_count\nFROM users u\nLEFT JOIN analytics_events ae ON ae.uid = u.id\nGROUP BY u.id, u.name, u.email\nORDER BY event_count DESC, u.id;",
+    "claude_is_error": false,
+    "correct": true,
+    "why": "matches gold",
+    "rows": [
+      [
+        1,
+        "Maya Chen",
         "maya@driftlabs.io",
         2
       ],
       [
         5,
+        "Kai Fischer",
         "kai@northwind.io",
         2
       ],
       [
         2,
+        "Sam Ortiz",
         "sam@driftlabs.io",
         1
       ],
       [
         3,
+        "Lee Park",
         "lee@solofounder.dev",
         1
       ],
       [
         4,
+        "Ana Gupta",
         "ana@driftlabs.io",
         1
       ],
       [
         6,
+        "Priya Nair",
         "priya@northwind.io",
         1
       ],
       [
         7,
+        "Maya C.",
         "maya@driftlabs.io",
         0
       ]
@@ -542,9 +783,94 @@
     "question": "How many analytics events has each user generated?"
   },
   {
-    "arm": "baseline",
-    "response_text": "```sql\nSELECT\n    w.id AS workspace_id,\n    w.name AS workspace_name,\n    u.id AS owner_user_id,\n    u.name AS owner_name,\n    u.email AS owner_email\nFROM public.workspaces w\nLEFT JOIN public.users u ON u.id = w.\"ownerId\"\nORDER BY w.id;\n```",
-    "sql": "SELECT\n    w.id AS workspace_id,\n    w.name AS workspace_name,\n    u.id AS owner_user_id,\n    u.name AS owner_name,\n    u.email AS owner_email\nFROM public.workspaces w\nLEFT JOIN public.users u ON u.id = w.\"ownerId\"\nORDER BY w.id;",
+    "arm": "solution",
+    "response_text": "```sql\nSELECT\n    u.id AS user_id,\n    u.email,\n    u.name,\n    COUNT(ae.id) AS analytics_event_count\nFROM users u\nLEFT JOIN analytics_events ae\n    ON ae.uid = u.id\nGROUP BY u.id, u.email, u.name\nORDER BY analytics_event_count DESC, u.id;\n```\n\nNote: `analytics_events.uid` is an unenforced, nullable foreign key to `users`, and the table itself is tiny (8 rows total) and may be vestigial/incomplete \u2014 treat these counts as indicative rather than authoritative. Events with a NULL or non-matching `uid` won't be attributed to any user.",
+    "sql": "SELECT\n    u.id AS user_id,\n    u.email,\n    u.name,\n    COUNT(ae.id) AS analytics_event_count\nFROM users u\nLEFT JOIN analytics_events ae\n    ON ae.uid = u.id\nGROUP BY u.id, u.email, u.name\nORDER BY analytics_event_count DESC, u.id;",
+    "claude_is_error": false,
+    "correct": true,
+    "why": "matches gold",
+    "rows": [
+      [
+        1,
+        "maya@driftlabs.io",
+        "Maya Chen",
+        2
+      ],
+      [
+        5,
+        "kai@northwind.io",
+        "Kai Fischer",
+        2
+      ],
+      [
+        2,
+        "sam@driftlabs.io",
+        "Sam Ortiz",
+        1
+      ],
+      [
+        3,
+        "lee@solofounder.dev",
+        "Lee Park",
+        1
+      ],
+      [
+        4,
+        "ana@driftlabs.io",
+        "Ana Gupta",
+        1
+      ],
+      [
+        6,
+        "priya@northwind.io",
+        "Priya Nair",
+        1
+      ],
+      [
+        7,
+        "maya@driftlabs.io",
+        "Maya C.",
+        0
+      ]
+    ],
+    "gold_rows": [
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        3,
+        1
+      ],
+      [
+        4,
+        1
+      ],
+      [
+        5,
+        2
+      ],
+      [
+        6,
+        1
+      ],
+      [
+        7,
+        0
+      ]
+    ],
+    "error": null,
+    "id": 9,
+    "question": "How many analytics events has each user generated?"
+  },
+  {
+    "arm": "db_access",
+    "response_text": "Here's the owner for each workspace:\n\n| Workspace | Owner | Email |\n|---|---|---|\n| Drift Labs | Maya Chen | maya@driftlabs.io |\n| Lee Sandbox | Lee Park | lee@solofounder.dev |\n| Northwind | Kai Fischer | kai@northwind.io |\n\n```sql\nSELECT w.id AS workspace_id, w.name AS workspace_name, u.id AS owner_id, u.name AS owner_name, u.email AS owner_email\nFROM workspaces w\nLEFT JOIN users u ON u.id = w.\"ownerId\"\nORDER BY w.id;\n```",
+    "sql": "SELECT w.id AS workspace_id, w.name AS workspace_name, u.id AS owner_id, u.name AS owner_name, u.email AS owner_email\nFROM workspaces w\nLEFT JOIN users u ON u.id = w.\"ownerId\"\nORDER BY w.id;",
     "claude_is_error": false,
     "correct": true,
     "why": "matches gold",
@@ -594,8 +920,8 @@
   },
   {
     "arm": "solution",
-    "response_text": "Relationship isn't broken (not in the deprecated-table list), just unenforced at the DB level \u2014 fine to join with a LEFT JOIN to surface any orphaned `ownerId`.\n\n```sql\nSELECT\n    w.id AS workspace_id,\n    w.name AS workspace_name,\n    w.\"ownerId\" AS owner_id,\n    u.name AS owner_name,\n    u.email AS owner_email\nFROM workspaces w\nLEFT JOIN users u ON u.id = w.\"ownerId\"\nORDER BY w.id;\n```",
-    "sql": "SELECT\n    w.id AS workspace_id,\n    w.name AS workspace_name,\n    w.\"ownerId\" AS owner_id,\n    u.name AS owner_name,\n    u.email AS owner_email\nFROM workspaces w\nLEFT JOIN users u ON u.id = w.\"ownerId\"\nORDER BY w.id;",
+    "response_text": "The relationship isn't a broken FK (not in list_broken_relationships), just unenforced at the DB level \u2014 so a LEFT JOIN is safe to use, with the caveat that `ownerId` could be null or point to a nonexistent user.\n\n```sql\nSELECT\n    w.id AS workspace_id,\n    w.name AS workspace_name,\n    u.id AS owner_id,\n    u.name AS owner_name,\n    u.email AS owner_email\nFROM workspaces w\nLEFT JOIN users u ON u.id = w.\"ownerId\"\nORDER BY w.id;\n```",
+    "sql": "SELECT\n    w.id AS workspace_id,\n    w.name AS workspace_name,\n    u.id AS owner_id,\n    u.name AS owner_name,\n    u.email AS owner_email\nFROM workspaces w\nLEFT JOIN users u ON u.id = w.\"ownerId\"\nORDER BY w.id;",
     "claude_is_error": false,
     "correct": true,
     "why": "matches gold",
@@ -644,15 +970,36 @@
     "question": "For each workspace, who is the owner?"
   },
   {
-    "arm": "baseline",
-    "response_text": "```sql\nSELECT ROUND(AVG(price_cents) / 100.0, 2) AS avg_price_usd\nFROM public.products;\n```",
-    "sql": "SELECT ROUND(AVG(price_cents) / 100.0, 2) AS avg_price_usd\nFROM public.products;",
+    "arm": "db_access",
+    "response_text": "Exploration notes: there are two order tables. `orders` (legacy) only ever has status `'completed'` \u2014 no cancelled orders there. `orders_v2` uses single-letter status codes (`c`, `p`, `r`, `x`); cross-checking against `payments.state` shows `c`\u2192succeeded payment, `r`\u2192refunded payment, and `x` rows carry `meta.reason` values like `'payment_failed'`, `'duplicate'`, `'test_order'` with no matching payment \u2014 confirming `x` = cancelled (`p` = pending).\n\n```sql\nSELECT COUNT(*) AS cancelled_orders\nFROM orders_v2\nWHERE status = 'x';\n```\n\n**3 cancelled orders.**",
+    "sql": "SELECT COUNT(*) AS cancelled_orders\nFROM orders_v2\nWHERE status = 'x';",
     "claude_is_error": false,
     "correct": true,
     "why": "matches gold",
     "rows": [
       [
-        "69.25"
+        3
+      ]
+    ],
+    "gold_rows": [
+      [
+        3
+      ]
+    ],
+    "error": null,
+    "id": 7,
+    "question": "How many cancelled orders do we have?"
+  },
+  {
+    "arm": "baseline",
+    "response_text": "The schema doesn't document whether `product_catalog_old` (no `active` flag, dollars) should be merged with `products` (has `active` flag, cents) as the \"full catalog,\" or whether currency/unit consistency holds across both \u2014 so this combines both tables and normalizes units, but that assumption should be verified against actual documentation.\n\n```sql\nSELECT\n    AVG(price_usd) AS avg_price_usd\nFROM (\n    SELECT price_cents / 100.0 AS price_usd\n    FROM public.products\n    -- no active = true filter, so discontinued (active = false) items are included\n\n    UNION ALL\n\n    SELECT price AS price_usd\n    FROM public.product_catalog_old\n    -- legacy/discontinued catalog table, assumed already in USD\n) AS full_catalog;\n```",
+    "sql": "SELECT\n    AVG(price_usd) AS avg_price_usd\nFROM (\n    SELECT price_cents / 100.0 AS price_usd\n    FROM public.products\n    -- no active = true filter, so discontinued (active = false) items are included\n\n    UNION ALL\n\n    SELECT price AS price_usd\n    FROM public.product_catalog_old\n    -- legacy/discontinued catalog table, assumed already in USD\n) AS full_catalog;",
+    "claude_is_error": false,
+    "correct": false,
+    "why": "result set differs from gold",
+    "rows": [
+      [
+        65.2
       ]
     ],
     "gold_rows": [
@@ -662,33 +1009,12 @@
     ],
     "error": null,
     "id": 11,
-    "question": "What's the average price of our products, in USD?"
-  },
-  {
-    "arm": "solution",
-    "response_text": "No explicit currency column exists \u2014 price_cents has no documented currency, so I'll assume it's USD cents (the only currency referenced anywhere in the docs). Since price_cents is nullable, I'll exclude nulls from the average.\n\n```sql\nSELECT AVG(price_cents) / 100.0 AS avg_price_usd\nFROM products\nWHERE price_cents IS NOT NULL;\n```",
-    "sql": "SELECT AVG(price_cents) / 100.0 AS avg_price_usd\nFROM products\nWHERE price_cents IS NOT NULL;",
-    "claude_is_error": false,
-    "correct": true,
-    "why": "matches gold",
-    "rows": [
-      [
-        "69.2500000000000000"
-      ]
-    ],
-    "gold_rows": [
-      [
-        "69.25"
-      ]
-    ],
-    "error": null,
-    "id": 11,
-    "question": "What's the average price of our products, in USD?"
+    "question": "What's the average price across our full product catalog, including discontinued items, in USD?"
   },
   {
     "arm": "baseline",
-    "response_text": "```sql\nSELECT\n    lower(email) AS email,\n    COUNT(*) AS user_count,\n    array_agg(id ORDER BY id) AS user_ids\nFROM public.users\nGROUP BY lower(email)\nHAVING COUNT(*) > 1\nORDER BY user_count DESC;\n```",
-    "sql": "SELECT\n    lower(email) AS email,\n    COUNT(*) AS user_count,\n    array_agg(id ORDER BY id) AS user_ids\nFROM public.users\nGROUP BY lower(email)\nHAVING COUNT(*) > 1\nORDER BY user_count DESC;",
+    "response_text": "```sql\nSELECT\n    lower(email) AS email,\n    count(*) AS user_count,\n    array_agg(id ORDER BY id) AS user_ids\nFROM public.users\nGROUP BY lower(email)\nHAVING count(*) > 1\nORDER BY user_count DESC, email;\n```",
+    "sql": "SELECT\n    lower(email) AS email,\n    count(*) AS user_count,\n    array_agg(id ORDER BY id) AS user_ids\nFROM public.users\nGROUP BY lower(email)\nHAVING count(*) > 1\nORDER BY user_count DESC, email;",
     "claude_is_error": false,
     "correct": true,
     "why": "matches gold",
@@ -714,8 +1040,29 @@
   },
   {
     "arm": "solution",
-    "response_text": "This is a single-table query with no joins needed, so no broken-relationship concerns apply here.\n\n```sql\nSELECT email, COUNT(*) AS occurrences, ARRAY_AGG(id ORDER BY id) AS user_ids\nFROM users\nGROUP BY email\nHAVING COUNT(*) > 1;\n```",
-    "sql": "SELECT email, COUNT(*) AS occurrences, ARRAY_AGG(id ORDER BY id) AS user_ids\nFROM users\nGROUP BY email\nHAVING COUNT(*) > 1;",
+    "response_text": "No currency column exists on `products` \u2014 pricing is stored only as `price_cents` with no per-row currency, so I'm treating the catalog as single-currency (USD). The live catalog is the `products` table (4 rows); `product_catalog_old` is a deprecated, unconstrained, superseded table and shouldn't be blended in. Discontinued items (e.g. `PLN-LEGACY`, `active=false`) are included since the question asks for the full catalog.\n\n```sql\nSELECT ROUND(AVG(price_cents) / 100.0, 2) AS avg_price_usd\nFROM products;\n```",
+    "sql": "SELECT ROUND(AVG(price_cents) / 100.0, 2) AS avg_price_usd\nFROM products;",
+    "claude_is_error": false,
+    "correct": true,
+    "why": "matches gold",
+    "rows": [
+      [
+        "69.25"
+      ]
+    ],
+    "gold_rows": [
+      [
+        "69.25"
+      ]
+    ],
+    "error": null,
+    "id": 11,
+    "question": "What's the average price across our full product catalog, including discontinued items, in USD?"
+  },
+  {
+    "arm": "solution",
+    "response_text": "Email has no uniqueness constraint, so duplicates are possible. Here's the query:\n\n```sql\nSELECT\n    email,\n    COUNT(*) AS occurrence_count,\n    ARRAY_AGG(id ORDER BY id) AS user_ids,\n    ARRAY_AGG(name ORDER BY id) AS names\nFROM users\nGROUP BY email\nHAVING COUNT(*) > 1\nORDER BY occurrence_count DESC, email;\n```",
+    "sql": "SELECT\n    email,\n    COUNT(*) AS occurrence_count,\n    ARRAY_AGG(id ORDER BY id) AS user_ids,\n    ARRAY_AGG(name ORDER BY id) AS names\nFROM users\nGROUP BY email\nHAVING COUNT(*) > 1\nORDER BY occurrence_count DESC, email;",
     "claude_is_error": false,
     "correct": true,
     "why": "matches gold",
@@ -726,6 +1073,62 @@
         [
           1,
           7
+        ],
+        [
+          "Maya Chen",
+          "Maya C."
+        ]
+      ]
+    ],
+    "gold_rows": [
+      [
+        "maya@driftlabs.io",
+        2
+      ]
+    ],
+    "error": null,
+    "id": 12,
+    "question": "Which users have duplicate email addresses?"
+  },
+  {
+    "arm": "db_access",
+    "response_text": "No currency columns anywhere in the schema \u2014 pricing appears to be stored exclusively in USD cents (`products.price_cents`), with no multi-currency support. The `products` table is the live catalog (has an `active` flag correctly identifying the discontinued \"Legacy Solo Plan\"), while `product_catalog_old` is a deprecated single-row leftover table \u2014 not part of the real catalog.\n\n```sql\nSELECT AVG(price_cents) / 100.0 AS avg_price_usd\nFROM products;\n```",
+    "sql": "SELECT AVG(price_cents) / 100.0 AS avg_price_usd\nFROM products;",
+    "claude_is_error": false,
+    "correct": true,
+    "why": "matches gold",
+    "rows": [
+      [
+        "69.2500000000000000"
+      ]
+    ],
+    "gold_rows": [
+      [
+        "69.25"
+      ]
+    ],
+    "error": null,
+    "id": 11,
+    "question": "What's the average price across our full product catalog, including discontinued items, in USD?"
+  },
+  {
+    "arm": "db_access",
+    "response_text": "Only one duplicate found: **maya@driftlabs.io** is shared by two user records \u2014 id 1 (\"Maya Chen\") and id 7 (\"Maya C.\"). No other email addresses (case-insensitive) are duplicated in the `users` table.\n\n```sql\nSELECT lower(email) AS email, count(*) AS cnt,\n       array_agg(id ORDER BY id) AS user_ids,\n       array_agg(name ORDER BY id) AS names\nFROM users\nGROUP BY lower(email)\nHAVING count(*) > 1\nORDER BY cnt DESC;\n```",
+    "sql": "SELECT lower(email) AS email, count(*) AS cnt,\n       array_agg(id ORDER BY id) AS user_ids,\n       array_agg(name ORDER BY id) AS names\nFROM users\nGROUP BY lower(email)\nHAVING count(*) > 1\nORDER BY cnt DESC;",
+    "claude_is_error": false,
+    "correct": true,
+    "why": "matches gold",
+    "rows": [
+      [
+        "maya@driftlabs.io",
+        2,
+        [
+          1,
+          7
+        ],
+        [
+          "Maya Chen",
+          "Maya C."
         ]
       ]
     ],

@@ -8,7 +8,7 @@
       "writesPerDay": 8,
       "orphanCandidate": false,
       "pos": {
-        "x": 120,
+        "x": 100,
         "y": 90
       },
       "columns": [
@@ -80,7 +80,7 @@
       "writesPerDay": 2,
       "orphanCandidate": false,
       "pos": {
-        "x": 330,
+        "x": 310,
         "y": 90
       },
       "columns": [
@@ -137,7 +137,7 @@
       "writesPerDay": 0,
       "orphanCandidate": false,
       "pos": {
-        "x": 540,
+        "x": 520,
         "y": 90
       },
       "columns": [
@@ -206,7 +206,7 @@
       "writesPerDay": 3,
       "orphanCandidate": false,
       "pos": {
-        "x": 750,
+        "x": 730,
         "y": 90
       },
       "columns": [
@@ -277,8 +277,8 @@
       "writesPerDay": 17,
       "orphanCandidate": false,
       "pos": {
-        "x": 120,
-        "y": 240
+        "x": 940,
+        "y": 90
       },
       "columns": [
         {
@@ -369,7 +369,7 @@
       "writesPerDay": 11,
       "orphanCandidate": false,
       "pos": {
-        "x": 330,
+        "x": 100,
         "y": 240
       },
       "columns": [
@@ -451,7 +451,7 @@
       "writesPerDay": 1,
       "orphanCandidate": false,
       "pos": {
-        "x": 540,
+        "x": 310,
         "y": 240
       },
       "columns": [
@@ -516,7 +516,7 @@
       "writesPerDay": 4,
       "orphanCandidate": false,
       "pos": {
-        "x": 750,
+        "x": 520,
         "y": 240
       },
       "columns": [
@@ -608,8 +608,8 @@
       "writesPerDay": 0,
       "orphanCandidate": false,
       "pos": {
-        "x": 120,
-        "y": 390
+        "x": 730,
+        "y": 240
       },
       "columns": [
         {
@@ -657,8 +657,8 @@
       "writesPerDay": 5,
       "orphanCandidate": false,
       "pos": {
-        "x": 330,
-        "y": 390
+        "x": 940,
+        "y": 240
       },
       "columns": [
         {
@@ -714,7 +714,7 @@
       "writesPerDay": 0,
       "orphanCandidate": true,
       "pos": {
-        "x": 540,
+        "x": 100,
         "y": 390
       },
       "columns": [
@@ -746,7 +746,7 @@
       "writesPerDay": 2,
       "orphanCandidate": false,
       "pos": {
-        "x": 750,
+        "x": 310,
         "y": 390
       },
       "columns": [
@@ -796,8 +796,8 @@
       "writesPerDay": 7,
       "orphanCandidate": false,
       "pos": {
-        "x": 120,
-        "y": 540
+        "x": 520,
+        "y": 390
       },
       "columns": [
         {
@@ -902,8 +902,8 @@
       "writesPerDay": 3,
       "orphanCandidate": false,
       "pos": {
-        "x": 330,
-        "y": 540
+        "x": 730,
+        "y": 390
       },
       "columns": [
         {
@@ -1036,5 +1036,6 @@
     "orphans": 1,
     "docCoverage": 1.0
   },
-  "healthScore": 45
+  "healthScore": 45,
+  "generatedAt": "2026-08-30T06:40:14Z"
 }
