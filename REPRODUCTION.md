@@ -49,6 +49,12 @@ not live MCP; that's step 5.
 npm run build         # production build check; should complete with no errors
 ```
 
+**Stop `npm run dev` (Ctrl+C) before running `npm run build`, and restart dev
+after.** Running both against the same `.next` directory at once was observed
+to corrupt the dev server's build cache (`Cannot find module './682.js'` or
+similar — the dashboard loads with zero CSS/JS applied, plain unstyled HTML).
+If you hit that: stop the dev server, `rm -rf .next`, `npm run dev` again.
+
 ## 2. Catalog-quality eval — zero setup, no LLM, <1 second
 
 Scores the *shipped* `mcp_server/catalog.json` against a hand-authored gold
