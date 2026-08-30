@@ -32,3 +32,8 @@ catalog_documented.json
 *.swp
 .idea/
 .vscode/
+
+# internal hackathon prep — kept local, not part of the submission repo
+_hackathon/VIDEO_TRANSCRIPT.md
+_hackathon/HANDOFF_TO_CLAUDE_CODE.md
+_hackathon/EVAL_AND_BASELINE_PLAN.md
