@@ -135,6 +135,6 @@ Next.js 14 · React · Python 3.11 · Postgres (`information_schema` + `pg_stat`
 Built by **Nainika Reddy Mula** — data & GTM engineering.
 Enterprise BI observability, rebuilt for the long tail of AI-generated apps.
 
-<sub>A founder-facing pitch for this project lives in <a href="PITCH.md"><code>PITCH.md</code></a>. Licensed under <a href="LICENSE">MIT</a>.</sub>
+<sub>Licensed under <a href="LICENSE">MIT</a>.</sub>
 
 </div>
