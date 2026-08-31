@@ -45,7 +45,13 @@ export default function AgentConsole() {
     <div className="panel console">
       <div className="panel-hd">
         <span>Agent Context Query</span>
-        <span className="hint">scripted demo — the live agent demo is Claude + MCP, not this panel</span>
+        <span className="hint badge">SCRIPTED DEMO — NOT LIVE MCP</span>
+      </div>
+      <div className="console-banner">
+        This panel keyword-matches canned answers over the same catalog — it
+        isn&apos;t a live agent. To see a real agent query StackAtlas, wire up
+        the MCP server (README → &quot;The agent demo&quot;) and ask Claude
+        directly.
       </div>
       <div className="chips">
         {agentAnswers.map((item) => (

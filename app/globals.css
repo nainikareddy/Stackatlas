@@ -104,6 +104,26 @@ html, body {
   align-items: center;
 }
 .panel-hd .hint { color: var(--text-dim); letter-spacing: 0.05em; text-transform: none; }
+.panel-hd .hint.badge {
+  color: var(--amber);
+  background: rgba(255, 176, 32, 0.12);
+  border: 1px solid rgba(255, 176, 32, 0.4);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.console-banner {
+  margin: 0 14px 4px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255, 176, 32, 0.35);
+  border-radius: 6px;
+  background: rgba(255, 176, 32, 0.06);
+  color: var(--amber);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  line-height: 1.5;
+}
 
 /* ---------- schema graph ---------- */
 .graph-wrap { padding: 8px; }
