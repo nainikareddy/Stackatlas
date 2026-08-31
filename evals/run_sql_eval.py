@@ -286,12 +286,17 @@ _ANY_FENCE = re.compile(r"```\w*\s*(.*?)```", re.S)
 
 
 def _extract_sql(text: str) -> str | None:
-    m = _SQL_FENCE.search(text)
-    if m:
-        return m.group(1).strip()
-    m = _ANY_FENCE.search(text)
-    if m:
-        return m.group(1).strip()
+    # LAST fence, not first: every system prompt asks for one final query,
+    # but a model that talks through a self-correction ("wait, let me fix
+    # that join") emits its abandoned draft in an earlier fence and the
+    # actual answer in the last one -- re.search() on the first match ran
+    # the discarded draft. See IMPROVEMENT_CHANGELOG.md, case 10.
+    matches = _SQL_FENCE.findall(text)
+    if matches:
+        return matches[-1].strip()
+    matches = _ANY_FENCE.findall(text)
+    if matches:
+        return matches[-1].strip()
     stripped = text.strip()
     if re.match(r"(?i)^(select|with)\b", stripped):
         return stripped

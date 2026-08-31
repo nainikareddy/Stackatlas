@@ -34,6 +34,18 @@ def test_extract_sql_returns_none_for_prose():
     assert _extract_sql(text) is None
 
 
+def test_extract_sql_takes_last_fence_over_first():
+    # a model that self-corrects mid-answer ("wait, let me fix that join")
+    # emits its abandoned draft in the first fence and the real answer in
+    # the last one -- the extractor must not grab the first match.
+    text = (
+        "```sql\nSELECT * FROM bad_join;\n```\n"
+        "Wait, let me correct that:\n"
+        "```sql\nSELECT * FROM good_join;\n```"
+    )
+    assert _extract_sql(text) == "SELECT * FROM good_join;"
+
+
 def test_normalize_value_rounds_numerics_consistently():
     assert _normalize_value(decimal.Decimal("846.001")) == 846.0
     assert _normalize_value(1.005) == 1.0 or _normalize_value(1.005) == 1.01  # float rounding is inherently fuzzy

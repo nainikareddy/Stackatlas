@@ -294,3 +294,54 @@ same failure class as the case-5/case-11 lesson, caught the same way.
   false positive before trusting it," which is exactly what `verify.py`'s
   self-verification gate already does for the catalog itself — this is
   the same discipline applied one level up, to the eval that grades it.
+
+## Postscript 2 — a third "don't trust a metric" moment, found on a fresh
+  reproduction run (2026-08-31)
+
+Same failure class again, caught the same way, in a third part of the
+harness: the SQL extractor this time, not the questions or the judgment
+scorer.
+
+- **Tried / why:** ran a clean reproduction of the full graded eval
+  (`python -m evals.run_sql_eval --json`) exactly as REPRODUCTION.md
+  instructs a fresh clone to do, to confirm "solution should be 12/12 on a
+  fresh run" holds up.
+- **Result:** it didn't — `solution` scored **11/12**, failing case 10
+  (workspace owner name, camelCase `ownerId`, no FK) with a Postgres
+  execution error: `column u.ownerId does not exist`. `baseline` and
+  `db_access` also moved (9/12 and 10/12 that run), consistent with the
+  already-documented non-determinism.
+- **Learning:** the *agent* wasn't wrong. Its response contained two
+  ```` ```sql ```` fenced blocks: a malformed first draft
+  (`LEFT JOIN users u ON u."ownerId" = u.id AND w."ownerId" = u.id` —
+  nonsensical, references the wrong alias), immediately followed by "Wait,
+  let me correct that join condition" and a fully correct second query
+  (`LEFT JOIN users u ON w."ownerId" = u.id`). `_extract_sql()` used
+  `re.search()`, which returns the *first* regex match — it ran the
+  model's abandoned draft instead of its self-corrected final answer. A
+  model that talks through a self-correction mid-response is exactly the
+  case none of the 12 tasks had previously happened to trigger.
+- **Decision:** kept. Changed `_extract_sql()` to take the *last* fenced
+  block via `re.findall()[-1]` instead of the first via `re.search()`, for
+  both the `sql` and generic fence patterns. Added
+  `test_extract_sql_takes_last_fence_over_first` to
+  `evals/test_run_sql_eval.py`. Full suite: **56/56** (`make test`, up
+  from 55 — the new test, nothing else changed). Re-ran only
+  `--case 10 --arm solution` (not the full 36 calls): now **PASS**,
+  correct join, matches gold. Scanned every `response_text` in the
+  officially recorded `evals/sql_eval_results.json` for a second
+  ` ```sql ` fence — **zero** other cases have one, so this fix is a
+  provable no-op against the currently recorded scoreboard, and it was
+  left untouched, following the same partial-reverification precedent as
+  Postscript 1's `_score_judgment` fix above.
+- **Hot take, take three:** three different parts of this eval harness —
+  the questions, the judgment scorer, and now the answer extractor — have
+  each independently produced a false result at some point, and all three
+  were caught the same way: treating a surprising number (an ambiguous
+  pass, an unexpected 11/12) as something to investigate before it's
+  reported, not something to explain away. The pattern holding across all
+  three is worth naming directly: **the part of the system most likely to
+  be silently wrong is whichever part parses free-form model output with a
+  regex and trusts the first match.** Anywhere else this harness (or a
+  downstream integration) does that same thing is worth auditing on the
+  same suspicion, not just the three spots already found.
