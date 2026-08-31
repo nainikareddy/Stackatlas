@@ -47,13 +47,19 @@ The flagship trick is detectable from structure alone: an *enforced* foreign key
 
 ## The agent demo
 
-Wire the MCP server into Claude Desktop / Claude Code:
+Wire the MCP server into Claude Desktop / Claude Code — use the **absolute
+path to the venv's Python** from the pipeline setup below, not a bare
+`"python"`. Claude Desktop is launched by `launchd`, not your shell, so it
+usually can't see your shell's `PATH`; pointing at a bare `python` command
+resolves to whatever (or whichever) interpreter that context finds first —
+on most machines, one without the `mcp` package installed, and the server
+fails to connect with no clear error beyond "connection closed":
 
 ```json
 {
   "mcpServers": {
     "stackatlas": {
-      "command": "python",
+      "command": "/ABSOLUTE/PATH/stackatlas/.venv/bin/python3",
       "args": ["/ABSOLUTE/PATH/stackatlas/mcp_server/server.py"]
     }
   }
@@ -95,6 +101,7 @@ The demo catalog is baked in — no database, no env vars.
 **Full pipeline against your own Postgres:**
 
 ```bash
+python3.11 -m venv .venv && source .venv/bin/activate   # pin 3.11 -- plain python3 may be too old for mcp[cli]
 pip install -r requirements.txt
 python pipeline/introspect.py "postgresql://localhost/yourdb" > catalog_raw.json
 export ANTHROPIC_API_KEY=sk-ant-...

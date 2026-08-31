@@ -62,6 +62,7 @@ answer key (`evals/labels.py`) for the deliberately-broken `vibeshop` fixture.
 Pure Python, no network calls.
 
 ```bash
+python3.11 -m venv .venv && source .venv/bin/activate  # reused by steps 3-5; pin 3.11 -- plain python3 may be too old for mcp[cli]
 pip install -r requirements-dev.txt
 make eval     # or: python -m evals.run_eval
 make test     # or: python -m pytest -q
@@ -82,6 +83,8 @@ not the exact digit, is what the eval is actually testing
 Needs Docker running.
 
 ```bash
+python3.11 -m venv .venv && source .venv/bin/activate  # no-op if step 2 already made this venv
+pip install -r requirements.txt                     # steps 4 and 5 both point at this same venv
 make db-up                                    # dockerized vibeshop on :5433, ~10-30s cold
 python pipeline/introspect.py "postgresql://stackatlas:stackatlas@localhost:5433/vibeshop" > catalog_raw.json
 python pipeline/docgen.py catalog_raw.json > mcp_server/catalog.json
@@ -108,11 +111,21 @@ for an exact number on your connection).
 
 ## 4. Wire the MCP server into Claude — the live agent demo
 
+Use the **absolute path to the `.venv` Python from step 3**, not a bare
+`"python"`. Claude Desktop is launched by `launchd`, not your shell, so it
+often can't see your shell's `PATH`; a bare `"python"` resolves to whatever
+interpreter that context finds first, which usually doesn't have the `mcp`
+package installed, and the server fails with `CONNECTION_CLOSED` and no
+clearer error than that. This is not hypothetical — it's exactly the
+failure a bare `"python"` command produced when this guide's own steps
+were rehearsed on a machine with the venv from step 3 present but not
+first on `launchd`'s `PATH`.
+
 ```json
 {
   "mcpServers": {
     "stackatlas": {
-      "command": "python",
+      "command": "/ABSOLUTE/PATH/stackatlas/.venv/bin/python3",
       "args": ["/ABSOLUTE/PATH/stackatlas/mcp_server/server.py"]
     }
   }
@@ -135,7 +148,7 @@ and `_hackathon/IMPROVEMENT_CHANGELOG.md` for what each arm gets.
 
 ```bash
 make db-up                          # if not already up
-source .venv/bin/activate           # or however you activate your venv
+source .venv/bin/activate           # the venv created in step 3
 python -m evals.run_sql_eval --json > evals/sql_eval_results.json
 ```
 
