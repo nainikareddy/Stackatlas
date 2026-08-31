@@ -253,3 +253,44 @@ covered by `evals/test_run_sql_eval.py` now.
   as something to verify, not just read, is what separated "the catalog
   scored one point lower" (false) from "the question was ambiguous"
   (true, and now fixed for whoever runs this next).
+
+## Postscript — a second "don't trust a metric" moment, found rehearsing the video
+
+This one didn't change the numbers above; it's recorded because it's the
+same failure class as the case-5/case-11 lesson, caught the same way.
+
+- **Tried / why:** rehearsed the case 6 live-agent demo (order_items ->
+  orders broken-FK story) before recording, running `db_access` on it
+  outside the graded harness to check the failure was reproducible enough
+  to show live.
+- **Result:** `db_access` gave its usual wrong answer — checked `orders`
+  instead of `orders_v2`, never found the broken FK — but `_score_judgment`
+  marked it **PASS**. Its response happened to contain "...there are no
+  line items to list" (because it thinks the order doesn't exist at all),
+  and the scorer's phrase check (`p in text`, plain substring) matched its
+  `"no line item"` OK-phrase inside that unrelated sentence. A false
+  positive, not the agent actually surfacing the broken relationship.
+- **Learning:** the officially recorded scoreboard in
+  `evals/sql_eval_results.json` (baseline 8/12, db_access 10/12, solution
+  12/12) is **unaffected** — that specific graded run's case-6 responses
+  didn't happen to trip this string. But re-running case 6 by hand, post-fix,
+  turned up the same root failure twice more in two different phrasings
+  ("gives up: order 5 doesn't exist" / "silently joins order_items to
+  products with no caveat") — both correctly scored FAIL once the check
+  used word-boundary matching (`\b...\b`) instead of raw substring
+  containment.
+- **Decision:** kept. Fixed `_score_judgment` in `evals/run_sql_eval.py`,
+  re-verified against the false-positive text and two genuine positives,
+  full suite still 55/55 (`make test`). Not run as a full 36-call
+  re-grade — the change only affects case 6's judgment scoring path, and
+  the officially recorded run wasn't touched by the bug, so there was
+  nothing to re-grade.
+- **Hot take, take two:** the first time this project caught a scoring bug
+  (case 5/11), it was in the *questions*. This time it was in the
+  *grader itself*. Both were found the same way — by refusing to accept a
+  surprising result at face value, including results that look like wins.
+  A heuristic scorer over free text is inherently this fragile; the fix
+  isn't "don't use heuristics," it's "verify the heuristic against a known
+  false positive before trusting it," which is exactly what `verify.py`'s
+  self-verification gate already does for the catalog itself — this is
+  the same discipline applied one level up, to the eval that grades it.

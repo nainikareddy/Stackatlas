@@ -370,9 +370,19 @@ def _score_judgment(response_text: str, sql: str | None) -> tuple[bool, str]:
     """Case 6 only: correct = the agent surfaced the broken order_items ->
     orders relationship / empty table instead of confidently fabricating a
     join. Heuristic on the response prose (see _JUDGMENT_OK_PHRASES) --
-    documented, not hidden: a real semantic judge is future work."""
+    documented, not hidden: a real semantic judge is future work.
+
+    Matches on word/phrase boundaries (\\b), not raw substring: a plain
+    `in` check let "no line item" match inside "no line items" in an
+    unrelated sentence (e.g. "there are no line items to list" because the
+    agent thinks the order doesn't exist at all) -- a false positive with
+    no acknowledgement of the actual broken-FK/empty-table issue.
+    """
     text = response_text.lower()
-    hit = next((p for p in _JUDGMENT_OK_PHRASES if p in text), None)
+    hit = next(
+        (p for p in _JUDGMENT_OK_PHRASES if re.search(rf"\b{re.escape(p)}\b", text)),
+        None,
+    )
     if hit:
         return True, f"surfaced the issue (matched phrase: {hit!r})"
     if sql and re.search(r"\border_items\b", sql, re.I):
